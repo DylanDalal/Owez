@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Users: each user can only read/write their own profile doc.
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── Bills: public read so friends can open the share link.
+    //    Only signed-in (non-anonymous) users can create bills.
+    //    Only the owner can update or delete.
+    match /bills/{slug} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+                    && request.auth.token.firebase.sign_in_provider != 'anonymous'
+                    && request.resource.data.ownerId == request.auth.uid;
+
+      allow update, delete: if request.auth != null
+                            && resource.data.ownerId == request.auth.uid;
+
+      // ── Items: public read, owner-only write.
+      match /items/{itemId} {
+        allow read: if true;
+        allow write: if request.auth != null
+                     && get(/databases/$(database)/documents/bills/$(slug)).data.ownerId
+                        == request.auth.uid;
+      }
+
+      // ── Claims: anyone signed in (incl. anonymous friends) can claim, but
+      //    claimerUid must match the caller's uid (no impersonation), and
+      //    only the original claimer can delete their own claim.
+      match /claims/{claimId} {
+        allow read: if true;
+        allow create: if request.auth != null
+                      && request.resource.data.claimerUid == request.auth.uid;
+        allow delete: if request.auth != null
+                      && resource.data.claimerUid == request.auth.uid;
+      }
+    }
+  }
+}
