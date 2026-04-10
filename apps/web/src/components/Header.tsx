@@ -29,7 +29,7 @@ export function Header() {
           <ThemeToggle />
           {signedIn ? (
             <>
-              <Link href="/me" className="btn btn-ghost !h-9 !py-0 text-sm">
+              <Link href="/me" className="btn btn-ghost !h-9 !px-4 !py-0 text-sm">
                 Dashboard
               </Link>
               <Link
@@ -50,7 +50,7 @@ export function Header() {
               </Link>
             </>
           ) : (
-            <Link href="/me" className="btn btn-primary !h-9 !py-0 text-sm">
+            <Link href="/me" className="btn btn-primary !h-9 !px-4 !py-0 text-sm">
               Continue
             </Link>
           )}

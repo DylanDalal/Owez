@@ -215,18 +215,16 @@ function NewBillInner() {
         )}
 
         {stage === "parsing" && (
-          <div className="mt-6 space-y-5">
-            <div className="card p-8 text-center">
-              <p className="font-display text-xl">Reading your receipt…</p>
-              <p className="mt-2 text-sm text-[color:var(--muted)]">
-                This usually takes a couple seconds.
-              </p>
-            </div>
+          <div className="mt-6 card p-8 text-center">
+            <p className="font-display text-xl">Reading your receipt…</p>
+            <p className="mt-2 text-sm text-[color:var(--muted)]">
+              This usually takes a couple seconds.
+            </p>
             {/* Ad shown while Mindee processes the receipt */}
             <AdSlot
               slot={process.env.NEXT_PUBLIC_AD_SLOT_PARSING ?? ""}
               format="auto"
-              className="mt-4"
+              className="mt-6"
             />
           </div>
         )}

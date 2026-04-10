@@ -18,8 +18,10 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png",
   },
   openGraph: {
-    title: `${APP_NAME} - Who Still Owez You?`,
-    description: APP_TAGLINE,
+    title: "Split bills with Owez.",
+    description:
+      "Take a picture. Send the link. Get paid back. No sign up needed.",
+    siteName: APP_NAME,
   },
 };
 
