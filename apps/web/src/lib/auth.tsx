@@ -123,6 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  if (loading) return null;
+
   return <AuthContext value={value}>{children}</AuthContext>;
 }
 

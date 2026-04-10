@@ -29,7 +29,7 @@ export function ThemeToggle() {
     <button
       type="button"
       aria-label="Toggle theme"
-      className="btn btn-ghost !px-3"
+      className="btn btn-ghost !h-9 !w-9 !p-0"
       onClick={toggle}
     >
       {dark ? "☀" : "☾"}
