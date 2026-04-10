@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Owez",
+    "slug": "owez",
+    "scheme": "owez",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.owez.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Owez needs the camera to take a photo of your receipt so it can parse the items.",
+        "NSPhotoLibraryUsageDescription": "Owez needs photo access so you can pick a saved receipt image."
+      }
+    },
+    "android": {
+      "package": "com.owez.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Owez uses your camera to read receipts."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Owez needs photo access to pick a receipt image."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

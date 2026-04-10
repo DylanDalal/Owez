@@ -1,0 +1,97 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    function receiptData(receiptId) {
+      return get(/databases/$(database)/documents/receipts/$(receiptId)).data;
+    }
+
+    // Schema validation for a user profile document
+    function validUserSchema(d) {
+      return d.keys().hasOnly([
+        'displayName', 'email', 'photoURL', 'venmo', 'cashapp',
+        'phone', 'createdAt', 'updatedAt'
+      ]) &&
+      (!('displayName' in d) || d.displayName is string) &&
+      (!('email' in d) || d.email is string) &&
+      (!('photoURL' in d) || d.photoURL is string) &&
+      (!('venmo' in d) || d.venmo is string) &&
+      (!('cashapp' in d) || d.cashapp is string) &&
+      (!('phone' in d) || d.phone is string);
+    }
+
+    // Schema validation for a receipt on create
+    function validReceiptCreate(d) {
+      return d.keys().hasAll(['ownerId', 'items', 'createdAt', 'title']) &&
+        d.ownerId is string &&
+        d.ownerId == request.auth.uid &&
+        d.items is list &&
+        d.items.size() > 0 &&
+        d.title is string;
+    }
+
+    // Schema validation for a claim (selection) being created
+    function validClaimCreate(d) {
+      return d.keys().hasAll(['itemIndex', 'guestName', 'initials', 'portions', 'createdAt']) &&
+        d.itemIndex is int &&
+        d.guestName is string && d.guestName.size() > 0 && d.guestName.size() < 80 &&
+        d.initials is string && d.initials.size() > 0 && d.initials.size() < 6 &&
+        d.portions is int && d.portions >= 1 && d.portions <= 50;
+    }
+
+    // ---------- users ----------
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId) && validUserSchema(request.resource.data);
+      allow update: if isOwner(userId) && validUserSchema(request.resource.data);
+      allow delete: if false;
+    }
+
+    // ---------- receipts ----------
+    match /receipts/{receiptId} {
+      // Owner can read their receipts. Anyone with the link can read (guests need it).
+      allow read: if true;
+
+      allow create: if isSignedIn() && validReceiptCreate(request.resource.data);
+
+      // Only the owner can edit the receipt (items, title, payment info). The
+      // items list must never be removed by a non-owner.
+      allow update: if isOwner(resource.data.ownerId) &&
+        request.resource.data.ownerId == resource.data.ownerId;
+
+      allow delete: if isOwner(resource.data.ownerId);
+
+      // ---------- claims (selections) subcollection ----------
+      match /claims/{claimId} {
+        // Publicly readable — guests need to see who claimed what
+        allow read: if true;
+
+        // Anyone can create a claim (guests don't sign in). Validate schema.
+        allow create: if validClaimCreate(request.resource.data);
+
+        // Claims are immutable in terms of itemIndex & guestName. Updates only
+        // allowed by the original guest (we match sessionId), and owner of receipt.
+        // Since guests are anonymous, we keep claims immutable by anyone-but-owner
+        // and let owners overwrite (for admin).
+        allow update: if isOwner(receiptData(receiptId).ownerId);
+
+        // A guest may delete their own claim only if they pass back the same
+        // sessionId that was stored on create (client-enforced in practice —
+        // rules just require that sessionId match).
+        allow delete: if isOwner(receiptData(receiptId).ownerId) ||
+          (resource.data.sessionId != null &&
+            request.resource.data.sessionId == resource.data.sessionId);
+      }
+    }
+  }
+}

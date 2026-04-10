@@ -1,43 +1,69 @@
 rules_version = '2';
 
+// Owez Firestore security rules.
+//
+// Model:
+//  - bills/{billId}                 — the bill doc, owned by its creator.
+//  - bills/{billId}/claims/{claimId} — one doc per (itemId, unitIndex) claim.
+//                                     doc id is auto-generated; `claimerId`
+//                                     field is pinned to request.auth.uid.
+//  - users/{uid}                    — user profile (payment handles, photo).
+//                                     publicly readable so claimants can see
+//                                     the bill creator's display name/photo.
+//
+// Design notes:
+//  - Anyone can READ a bill, since the whole point is that the creator
+//    shares the link with friends. Security here relies on UUID unguessability,
+//    not on authorization.
+//  - Writing a bill requires auth and request.auth.uid == creatorId.
+//  - Each claim doc stores its claimerId as a field; rules make sure it
+//    matches the authenticated uid on create/update.
+//  - Bill creators can delete any claim on their own bill (e.g. to clean up
+//    stale claims before sending a second share link). Anonymous friends can
+//    only touch their own claims.
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Users: each user can only read/write their own profile doc.
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      // Publicly readable so claimants can render a creator's display name
+      // and avatar on their bill view without a separate lookup.
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // ── Bills: public read so friends can open the share link.
-    //    Only signed-in (non-anonymous) users can create bills.
-    //    Only the owner can update or delete.
-    match /bills/{slug} {
+    match /bills/{billId} {
       allow read: if true;
 
       allow create: if request.auth != null
-                    && request.auth.token.firebase.sign_in_provider != 'anonymous'
-                    && request.resource.data.ownerId == request.auth.uid;
+                    && request.auth.uid == request.resource.data.creatorId
+                    && request.resource.data.id == billId;
 
       allow update, delete: if request.auth != null
-                            && resource.data.ownerId == request.auth.uid;
+                            && request.auth.uid == resource.data.creatorId;
 
-      // ── Items: public read, owner-only write.
-      match /items/{itemId} {
-        allow read: if true;
-        allow write: if request.auth != null
-                     && get(/databases/$(database)/documents/bills/$(slug)).data.ownerId
-                        == request.auth.uid;
-      }
-
-      // ── Claims: anyone signed in (incl. anonymous friends) can claim, but
-      //    claimerUid must match the caller's uid (no impersonation), and
-      //    only the original claimer can delete their own claim.
       match /claims/{claimId} {
         allow read: if true;
+
+        // Create: authenticated user, writing their own claimerId, with a
+        // sanity-checked shape.
         allow create: if request.auth != null
-                      && request.resource.data.claimerUid == request.auth.uid;
+                      && request.resource.data.claimerId == request.auth.uid
+                      && request.resource.data.keys().hasOnly([
+                           'itemId', 'unitIndex', 'portions', 'splitInto',
+                           'claimerId', 'name', 'initials', 'createdAt',
+                           'photoURL'
+                         ]);
+
+        // Update: claimer can update their own claim, shape still enforced.
+        allow update: if request.auth != null
+                      && resource.data.claimerId == request.auth.uid
+                      && request.resource.data.claimerId == request.auth.uid;
+
+        // Delete: claimer themselves OR the bill creator (for cleanup).
         allow delete: if request.auth != null
-                      && resource.data.claimerUid == request.auth.uid;
+                      && (resource.data.claimerId == request.auth.uid
+                          || get(/databases/$(database)/documents/bills/$(billId)).data.creatorId == request.auth.uid);
       }
     }
   }

@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent: #2ef2a3;
+  --bg: #fafaf7;
+  --fg: #0b0d0c;
+  --muted: #6b6f6d;
+  --card: #ffffff;
+  --border: rgba(11, 13, 12, 0.08);
+}
+
+.dark {
+  --bg: #0b0d0c;
+  --fg: #f4f5f3;
+  --muted: #9aa09c;
+  --card: #16191a;
+  --border: rgba(244, 245, 243, 0.09);
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, Inter, sans-serif;
+}
+
+/* Thin dashed receipt divider — reused in landing + receipt surfaces. */
+.receipt-divider {
+  background-image: linear-gradient(
+    to right,
+    var(--border) 0 6px,
+    transparent 6px 12px
+  );
+  background-size: 12px 1px;
+  background-repeat: repeat-x;
+  height: 1px;
+}
+
+.torn-top,
+.torn-bottom {
+  --sz: 14px;
+  background-image:
+    radial-gradient(circle at var(--sz) 0, var(--bg) var(--sz), transparent calc(var(--sz) + 0.5px));
+  background-size: calc(var(--sz) * 2) var(--sz);
+  background-repeat: repeat-x;
+  height: var(--sz);
+}
+.torn-top  { background-position: top; }
+.torn-bottom { background-position: bottom; transform: scaleY(-1); }
+
+/* Sticky name-input wrapper that plays nicely with the mobile keyboard */
+.sticky-name-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: env(safe-area-inset-bottom) 1rem 1rem 1rem;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  z-index: 40;
+}
+
+/* Stamp used for claim initials — circular, accent ring, slight rotation */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #053a24;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 2px solid #053a24;
+  transform: rotate(-6deg);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  transition: transform 80ms ease, background 120ms ease;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn-primary {
+  background: var(--accent);
+  color: #053a24;
+  border-color: #053a24;
+}
+.btn-ghost { background: transparent; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+}
+
+input, textarea, select {
+  background: var(--card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.625rem 0.875rem;
+  width: 100%;
+  outline: none;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(46, 242, 163, 0.25);
+}

@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+/* Use a class-based dark mode so the ThemeToggle can flip it at runtime. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-accent: #2ef2a3;
+  --color-accent-muted: #1fbd7e;
+  --color-accent-ink: #053a24;
+  --color-paper-light: #fafaf7;
+  --color-paper-dark: #0b0d0c;
+  --color-ink: #0b0f0d;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Inter", sans-serif;
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "Menlo", "Monaco", monospace;
+  --font-display:
+    ui-monospace, "SFMono-Regular", "Menlo", "Monaco", monospace;
+
+  --shadow-stamp: 0 2px 0 0 rgba(0, 0, 0, 0.08), 0 0 0 2px #2ef2a3;
+
+  --animate-stamp-in: stampIn 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes stampIn {
+  0% {
+    transform: scale(0.6) rotate(-12deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15) rotate(-8deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-6deg);
+    opacity: 1;
+  }
+}
+
+/* ---- Theme tokens ---- */
+/* Short names the components reference as `bg-[color:var(--bg)]` etc. They
+ * flip under `.dark` at runtime — the init script in layout.tsx sets the
+ * class before first paint so there's no FOUC. */
+:root {
+  --bg: #fafaf7;
+  --fg: #0b0d0c;
+  --muted: #6b6f6d;
+  --card: #ffffff;
+  --border: rgba(11, 13, 12, 0.08);
+}
+
+.dark {
+  --bg: #0b0d0c;
+  --fg: #f4f5f3;
+  --muted: #9aa09c;
+  --card: #16191a;
+  --border: rgba(244, 245, 243, 0.09);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* Every page wraps its content in a <main>; make it a full-height flex
+ * column so the footer (with `mt-auto`) can stick to the bottom even when
+ * the page content is shorter than the viewport. */
+main {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+/* iOS safe areas — the PWA runs fullscreen when installed. */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* ---- Receipt-paper primitives ---- */
+
+.receipt-divider {
+  background-image: linear-gradient(
+    to right,
+    var(--border) 0 6px,
+    transparent 6px 12px
+  );
+  background-size: 12px 1px;
+  background-repeat: repeat-x;
+  height: 1px;
+}
+
+.torn-top,
+.torn-bottom {
+  --sz: 14px;
+  background-image: radial-gradient(
+    circle at var(--sz) 0,
+    var(--bg) var(--sz),
+    transparent calc(var(--sz) + 0.5px)
+  );
+  background-size: calc(var(--sz) * 2) var(--sz);
+  background-repeat: repeat-x;
+  height: var(--sz);
+}
+.torn-top {
+  background-position: top;
+}
+.torn-bottom {
+  background-position: bottom;
+  transform: scaleY(-1);
+}
+
+/* Sticky name-input wrapper that plays nicely with the mobile keyboard. */
+.sticky-name-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.75rem 1rem calc(env(safe-area-inset-bottom) + 0.75rem) 1rem;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+  z-index: 40;
+}
+
+/* Stamp: circular, accent ring, slight rotation — used for claim initials. */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 2px solid var(--color-accent-ink);
+  transform: rotate(-6deg);
+}
+
+/* Button component. .btn + .btn-primary / .btn-ghost. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  transition:
+    transform 80ms ease,
+    background 120ms ease,
+    opacity 120ms ease;
+  cursor: pointer;
+  text-align: center;
+}
+.btn:hover {
+  transform: translateY(-1px);
+}
+.btn:active {
+  transform: translateY(0);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  border-color: var(--color-accent-ink);
+}
+.btn-ghost {
+  background: transparent;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+}
+
+/* Form elements get the same token styling by default — individual pages
+ * override via Tailwind utilities when they need something custom. */
+input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  background: var(--card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.625rem 0.875rem;
+  width: 100%;
+  outline: none;
+  font: inherit;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(46, 242, 163, 0.25);
+}

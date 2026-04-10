@@ -1,0 +1,22 @@
+{
+  "name": "@owez/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:unit": "vitest run unit",
+    "test:rules": "vitest run rules",
+    "test:integration": "vitest run integration"
+  },
+  "dependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "@owez/shared": "workspace:*",
+    "firebase": "^11.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

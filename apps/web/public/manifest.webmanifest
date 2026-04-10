@@ -1,0 +1,17 @@
+{
+  "name": "Owez",
+  "short_name": "Owez",
+  "description": "Snap a receipt. Split the bill. Get paid.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0F0D",
+  "theme_color": "#0B0F0D",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
