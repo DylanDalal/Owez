@@ -72,14 +72,14 @@ export default function PublicBillPage({
     };
   }, [billId]);
 
-  // Dynamic page title: "Pay {first name} Back for {Receipt Name}"
+  // Dynamic page title: "Pay {first name} back for {Receipt Name}"
   useEffect(() => {
     if (!bill) return;
     const firstName = bill.creatorName?.split(/\s+/)[0];
     const receiptName = bill.title || "a Receipt";
     document.title = firstName
-      ? `Pay ${firstName} Back for ${receiptName}`
-      : `Pay Back for ${receiptName}`;
+      ? `Pay ${firstName} back for ${receiptName}`
+      : `Pay back for ${receiptName}`;
   }, [bill]);
 
   // Restore saved name from localStorage, or prefer the signed-in profile.

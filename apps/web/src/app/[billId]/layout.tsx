@@ -37,8 +37,8 @@ export async function generateMetadata({
   const firstName = bill.creatorName?.split(/\s+/)[0];
   const receiptName = bill.title || "a Receipt";
   const title = firstName
-    ? `Pay ${firstName} Back for ${receiptName}`
-    : `Pay Back for ${receiptName}`;
+    ? `Pay ${firstName} back for ${receiptName}`
+    : `Pay back for ${receiptName}`;
 
   return {
     title,

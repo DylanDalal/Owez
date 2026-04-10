@@ -3,7 +3,15 @@ import { APP_NAME, APP_TAGLINE } from "@owez/shared";
 import { Providers } from "./providers";
 import "./globals.css";
 
+// Open Graph / Twitter image URLs must be absolute. Next resolves relative
+// `openGraph.images` against this; without it, builds can emit localhost.
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  process.env.URL ||
+  "https://owez.me";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: `${APP_NAME} - Who Still Owez You?`,
   description:
     "Snap a receipt, send one link, get paid. Split the bill without the awkward group-chat math.",
