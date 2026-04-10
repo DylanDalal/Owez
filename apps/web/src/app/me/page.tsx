@@ -8,7 +8,7 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SignInGate } from "@/components/SignInGate";
 import { useAuth } from "@/lib/auth";
-import { getClaimsOnce, subscribeToMyBills } from "@/lib/bills";
+import { deleteBill, getClaimsOnce, subscribeToMyBills } from "@/lib/bills";
 import { centsToDisplay } from "@/lib/format";
 
 /**
@@ -86,6 +86,8 @@ function MyBillsInner() {
   const totalRecoupedCents =
     rows?.reduce((s, r) => s + r.claimedCents, 0) ?? 0;
 
+  if (rows === null) return null;
+
   return (
     <main>
       <Header />
@@ -106,12 +108,7 @@ function MyBillsInner() {
         </div>
 
         <div className="mt-8 space-y-3">
-          {rows === null && (
-            <p className="text-center text-sm text-[color:var(--muted)]">
-              Loading…
-            </p>
-          )}
-          {rows && rows.length === 0 && (
+          {rows.length === 0 && (
             <div className="card p-8 text-center">
               <p className="text-[color:var(--muted)]">No receipts yet.</p>
               <Link
@@ -123,31 +120,49 @@ function MyBillsInner() {
             </div>
           )}
           {rows?.map(({ bill, outstandingCents }) => (
-            <Link
+            <div
               key={bill.id}
-              href={`/${bill.id}?owner=1`}
-              className="card flex items-center justify-between p-4 hover:border-[color:var(--color-accent)]"
+              className="group card flex items-center justify-between p-4 hover:border-[color:var(--color-accent)]"
             >
-              <div className="min-w-0">
-                <div className="truncate font-semibold">
-                  {bill.title || "Untitled"}
+              <Link
+                href={`/${bill.id}?owner=1`}
+                className="flex min-w-0 flex-1 items-center justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-semibold">
+                    {bill.title || "Untitled"}
+                  </div>
+                  <div className="text-xs text-[color:var(--muted)]">
+                    {formatDate(bill.createdAt)} · {bill.items.length} item
+                    {bill.items.length === 1 ? "" : "s"}
+                  </div>
                 </div>
-                <div className="text-xs text-[color:var(--muted)]">
-                  {formatDate(bill.createdAt)} · {bill.items.length} item
-                  {bill.items.length === 1 ? "" : "s"}
+                <div className="text-right">
+                  <div className="tabular-nums">
+                    {centsToDisplay(bill.totalCents)}
+                  </div>
+                  <div className="text-xs text-[color:var(--muted)]">
+                    {outstandingCents <= 0
+                      ? "Settled"
+                      : `Still owed ${centsToDisplay(outstandingCents)}`}
+                  </div>
                 </div>
-              </div>
-              <div className="text-right">
-                <div className="tabular-nums">
-                  {centsToDisplay(bill.totalCents)}
-                </div>
-                <div className="text-xs text-[color:var(--muted)]">
-                  {outstandingCents <= 0
-                    ? "Settled"
-                    : `Still owed ${centsToDisplay(outstandingCents)}`}
-                </div>
-              </div>
-            </Link>
+              </Link>
+              <button
+                type="button"
+                aria-label="Delete receipt"
+                className="ml-3 hidden shrink-0 rounded-lg p-2 text-[color:var(--muted)] hover:text-red-500 group-hover:block"
+                onClick={() => {
+                  if (confirm("Delete this receipt? This can't be undone.")) {
+                    void deleteBill(bill.id);
+                  }
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M2 4h12M5.3 4V2.7a1 1 0 0 1 1-1h3.4a1 1 0 0 1 1 1V4M6.5 7v4.5M9.5 7v4.5M3.5 4l.7 9a1.5 1.5 0 0 0 1.5 1.3h4.6a1.5 1.5 0 0 0 1.5-1.3l.7-9" />
+                </svg>
+              </button>
+            </div>
           ))}
         </div>
       </section>

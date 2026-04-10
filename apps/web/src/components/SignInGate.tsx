@@ -18,16 +18,7 @@ export function SignInGate({ children }: { children: ReactNode }) {
   const { user, loading, isAnonymous, signInWithGoogle, signInWithApple } =
     useAuth();
 
-  if (loading) {
-    return (
-      <main>
-        <Header />
-        <div className="mx-auto max-w-md px-6 py-24 text-center text-[color:var(--muted)]">
-          Loading…
-        </div>
-      </main>
-    );
-  }
+  if (loading) return null;
 
   if (!user || isAnonymous) {
     return (

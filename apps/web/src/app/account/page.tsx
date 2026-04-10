@@ -33,12 +33,15 @@ function AccountInner() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const [ready, setReady] = useState(false);
+
   useEffect(() => {
     if (!profile) return;
     setVenmo(profile.venmo ?? "");
     setCashapp(profile.cashapp ?? "");
     setZellePhone(profile.zellePhone ?? "");
     setPhotoURL(profile.photoURL ?? user?.photoURL ?? "");
+    setReady(true);
   }, [profile, user?.photoURL]);
 
   async function save() {
@@ -92,6 +95,8 @@ function AccountInner() {
       "noopener",
     );
   }
+
+  if (!ready) return null;
 
   return (
     <main>

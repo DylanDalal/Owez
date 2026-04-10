@@ -181,16 +181,7 @@ export default function PublicBillPage({
     }
   }
 
-  if (bill === undefined) {
-    return (
-      <main>
-        <Header />
-        <div className="mx-auto max-w-2xl px-4 py-20 text-center text-[color:var(--muted)]">
-          Loading receipt…
-        </div>
-      </main>
-    );
-  }
+  if (bill === undefined) return null;
   if (bill === null) {
     return (
       <main>
