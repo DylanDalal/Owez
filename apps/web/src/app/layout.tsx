@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     description:
       "Take a picture. Send the link. Get paid back. No sign up needed.",
     siteName: APP_NAME,
-    images: [{ url: "/share.png", width: 1200, height: 630 }],
+    images: [{ url: "/share.webp", width: 1200, height: 630 }],
   },
 };
 

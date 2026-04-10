@@ -45,6 +45,13 @@ export async function generateMetadata({
     openGraph: {
       title,
       description: "Tap your items and pay your share. No sign up needed.",
+      images: [{ url: "/share2.webp", width: 1200, height: 630 }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description: "Tap your items and pay your share. No sign up needed.",
+      images: ["/share2.webp"],
     },
   };
 }
