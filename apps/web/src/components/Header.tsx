@@ -10,7 +10,7 @@ import { ThemeToggle } from "./ThemeToggle";
  * modal is owned by SignInGate — we just link to /me (which gates itself).
  */
 export function Header() {
-  const { user, profile, isAnonymous } = useAuth();
+  const { user, profile, loading, isAnonymous } = useAuth();
   const signedIn = !!user && !isAnonymous;
 
   return (
@@ -21,38 +21,40 @@ export function Header() {
           className="flex items-center gap-2 font-display text-lg font-bold tracking-tight"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon.svg" alt="" className="h-6 w-6 rounded-md" />
+          <img src="/icon.svg" alt="" className="h-7 w-7 rounded-md" />
           <span>Owez</span>
         </Link>
 
         <nav className="flex h-10 items-center gap-2">
           <ThemeToggle />
-          {signedIn ? (
-            <>
-              <Link href="/me" className="btn btn-ghost !py-2 text-sm">
-                Dashboard
+          {!loading && (
+            signedIn ? (
+              <>
+                <Link href="/me" className="btn btn-ghost !py-2 text-sm">
+                  Dashboard
+                </Link>
+                <Link
+                  href="/account"
+                  className="btn btn-ghost !p-1.5"
+                  aria-label="Account"
+                >
+                  {profile?.photoURL ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profile.photoURL}
+                      alt=""
+                      className="h-7 w-7 rounded-full border-2 border-[color:var(--color-accent)] object-cover"
+                    />
+                  ) : (
+                    <span className="px-1.5 text-sm">Account</span>
+                  )}
+                </Link>
+              </>
+            ) : (
+              <Link href="/me" className="btn btn-primary !py-2 text-sm">
+                Continue
               </Link>
-              <Link
-                href="/account"
-                className="btn btn-ghost !p-1.5"
-                aria-label="Account"
-              >
-                {profile?.photoURL ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={profile.photoURL}
-                    alt=""
-                    className="h-7 w-7 rounded-full border-2 border-[color:var(--color-accent)] object-cover"
-                  />
-                ) : (
-                  <span className="px-1.5 text-sm">Account</span>
-                )}
-              </Link>
-            </>
-          ) : (
-            <Link href="/me" className="btn btn-primary !py-2 text-sm">
-              Continue
-            </Link>
+            )
           )}
         </nav>
       </div>

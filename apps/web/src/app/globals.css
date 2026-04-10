@@ -168,7 +168,7 @@ main {
   text-align: center;
 }
 .btn:hover {
-  background: color-mix(in srgb, var(--card) 85%, var(--fg));
+  background: color-mix(in srgb, var(--card) 96%, var(--fg));
 }
 .btn:disabled {
   opacity: 0.4;
@@ -186,7 +186,7 @@ main {
   background: transparent;
 }
 .btn-ghost:hover:not(:disabled) {
-  background: color-mix(in srgb, transparent 85%, var(--fg));
+  background: color-mix(in srgb, transparent 96%, var(--fg));
 }
 
 .card {
