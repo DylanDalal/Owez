@@ -28,7 +28,7 @@ export default function LandingPage() {
             Owez&nbsp;You?
           </h1>
           <p className="mt-6 max-w-md text-lg text-[color:var(--muted)]">
-            Upload your receipt. Send one link. Your friends pick their stuff
+            Upload your receipt and send a link. Your friends pick their stuff
             and pay you back. They don't need the app. They don't even need
             to sign up.
           </p>

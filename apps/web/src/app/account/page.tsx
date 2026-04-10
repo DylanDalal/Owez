@@ -125,13 +125,13 @@ function AccountInner() {
           <div>
             <div className="text-sm font-medium">Name</div>
             <div className="mt-1 text-[color:var(--muted)]">
-              {user?.displayName ?? "—"}
+              {user?.displayName ?? "-"}
             </div>
           </div>
           <div>
             <div className="text-sm font-medium">Email</div>
             <div className="mt-1 text-[color:var(--muted)]">
-              {user?.email ?? "—"}
+              {user?.email ?? "-"}
             </div>
           </div>
 

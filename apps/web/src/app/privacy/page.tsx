@@ -16,22 +16,22 @@ export default function PrivacyPage() {
         <h2 className="mt-8 font-display text-xl font-bold">What we collect</h2>
         <ul className="list-disc space-y-1 pl-6">
           <li>
-            <strong>Account info</strong> — the name, email, and profile photo
+            <strong>Account info</strong>: the name, email, and profile photo
             that Google or Apple hand us when you sign in. You can upload a
             different photo if you want; it lives inline on your profile
             document in Firestore.
           </li>
           <li>
-            <strong>Receipts</strong> — the parsed line items from any receipt
+            <strong>Receipts</strong>: the parsed line items from any receipt
             you upload. We do <em>not</em> store the original receipt image.
           </li>
           <li>
-            <strong>Payment handles</strong> — your Venmo, Cash App, and
+            <strong>Payment handles</strong>: your Venmo, Cash App, and
             (optionally) phone number for Zelle. These are shown to friends on
             your receipts so they can pay you.
           </li>
           <li>
-            <strong>Claims</strong> — when a guest picks items on your
+            <strong>Claims</strong>: when a guest picks items on your
             receipt, we store the name they typed and which items they
             claimed.
           </li>
@@ -59,10 +59,10 @@ export default function PrivacyPage() {
         </h2>
         <ul className="list-disc space-y-1 pl-6">
           <li>
-            <strong>Firebase</strong> (Google) — authentication and database.
+            <strong>Firebase</strong> (Google): authentication and database.
           </li>
           <li>
-            <strong>Mindee</strong> — reads the receipt you upload and returns
+            <strong>Mindee</strong>: reads the receipt you upload and returns
             structured line items. We send them the photo of the receipt;
             they don't retain it once we fetch the parse result.
           </li>

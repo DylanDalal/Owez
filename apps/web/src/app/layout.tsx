@@ -4,7 +4,7 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: `${APP_NAME} — Who Still Owez You?`,
+  title: `${APP_NAME} - Who Still Owez You?`,
   description:
     "Snap a receipt, send one link, get paid. Split the bill without the awkward group-chat math.",
   manifest: "/manifest.webmanifest",
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png",
   },
   openGraph: {
-    title: `${APP_NAME} — Who Still Owez You?`,
+    title: `${APP_NAME} - Who Still Owez You?`,
     description: APP_TAGLINE,
   },
 };

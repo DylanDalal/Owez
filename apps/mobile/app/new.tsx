@@ -416,7 +416,7 @@ export default function NewBillScreen() {
 /* ------------ sub-components ------------ */
 
 function DoneScreen({ billId, onNew }: { billId: string; onNew: () => void }) {
-  const shareUrl = `${process.env.EXPO_PUBLIC_WEB_ORIGIN ?? "https://owez.app"}/b/${billId}`;
+  const shareUrl = `${process.env.EXPO_PUBLIC_WEB_ORIGIN ?? "https://owez.me"}/${billId}`;
 
   async function copy() {
     await Clipboard.setStringAsync(shareUrl);

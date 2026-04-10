@@ -174,7 +174,7 @@ function NewBillInner() {
       if (!bill.creatorPhotoURL) delete bill.creatorPhotoURL;
 
       await createBill(bill);
-      router.replace(`/b/${billId}?owner=1`);
+      router.replace(`/${billId}?owner=1`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save bill");
       setStage("edit");

@@ -184,7 +184,7 @@ export function ItemDetailSheet({
         {unit && unit.claims.length > 0 && (
           <div className="mt-4">
             <div className="text-xs font-medium text-[color:var(--muted)]">
-              Already on this unit — tap to remove
+              Already on this unit, tap to remove
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {unit.claims.map((c) => (

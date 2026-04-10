@@ -27,13 +27,13 @@ export async function POST(req: Request) {
   const modelId = process.env.MINDEE_MODEL_ID;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "MINDEE_API_KEY not set — copy .env.example to .env.local" },
+      { error: "MINDEE_API_KEY not set. Copy .env.example to .env.local" },
       { status: 500 },
     );
   }
   if (!modelId) {
     return NextResponse.json(
-      { error: "MINDEE_MODEL_ID not set — grab it from platform.mindee.com" },
+      { error: "MINDEE_MODEL_ID not set. Grab it from platform.mindee.com" },
       { status: 500 },
     );
   }

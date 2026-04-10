@@ -72,6 +72,16 @@ export default function PublicBillPage({
     };
   }, [billId]);
 
+  // Dynamic page title: "Pay {first name} Back for {Receipt Name}"
+  useEffect(() => {
+    if (!bill) return;
+    const firstName = bill.creatorName?.split(/\s+/)[0];
+    const receiptName = bill.title || "a Receipt";
+    document.title = firstName
+      ? `Pay ${firstName} Back for ${receiptName}`
+      : `Pay Back for ${receiptName}`;
+  }, [bill]);
+
   // Restore saved name from localStorage, or prefer the signed-in profile.
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -198,7 +208,7 @@ export default function PublicBillPage({
 
   const shareUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}/b/${bill.id}`
+      ? `${window.location.origin}/${bill.id}`
       : "";
 
   const detailItem = detail
@@ -210,7 +220,7 @@ export default function PublicBillPage({
     ? buildPayLinks({
         methods: bill.paymentMethods,
         amountCents: myTotals.totalCents,
-        note: bill.title ? `Owez — ${bill.title}` : "Owez bill",
+        note: bill.title ? `Owez - ${bill.title}` : "Owez bill",
         creatorName: bill.creatorName,
       })
     : [];
@@ -239,7 +249,7 @@ export default function PublicBillPage({
                     await navigator.clipboard.writeText(shareUrl);
                     flashToast("Copied!", 1500);
                   } catch {
-                    flashToast("Copy failed — select + copy manually");
+                    flashToast("Copy failed, select and copy manually");
                   }
                 }}
               >

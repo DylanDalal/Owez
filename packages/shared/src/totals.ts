@@ -96,7 +96,7 @@ export function assertClaimAllowed(
   const existing = existingOnUnit[0]!.splitInto;
   if (claim.splitInto !== existing) {
     throw new Error(
-      `This unit is already split ${existing} ways — pick a matching portion size.`,
+      `This unit is already split ${existing} ways. Pick a matching portion size.`,
     );
   }
   const alreadyClaimed = existingOnUnit.reduce((s, c) => s + c.portions, 0);

@@ -31,7 +31,11 @@ import { getFirebase } from "./firebase";
  */
 
 export function newBillId(): BillId {
-  return crypto.randomUUID();
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let id = "";
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  for (const b of bytes) id += chars[b % chars.length];
+  return id;
 }
 
 export function makeId(): string {

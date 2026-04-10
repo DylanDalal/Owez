@@ -125,7 +125,7 @@ function MyBillsInner() {
           {rows?.map(({ bill, outstandingCents }) => (
             <Link
               key={bill.id}
-              href={`/b/${bill.id}?owner=1`}
+              href={`/${bill.id}?owner=1`}
               className="card flex items-center justify-between p-4 hover:border-[color:var(--color-accent)]"
             >
               <div className="min-w-0">

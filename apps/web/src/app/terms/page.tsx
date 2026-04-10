@@ -27,7 +27,7 @@ export default function TermsPage() {
         </h2>
         <p>
           Owez uses a third-party receipt-parsing service (Mindee) to read
-          your receipts. It is very good — but it is not perfect. You should
+          your receipts. It is very good, but it is not perfect. You should
           always review the parsed line items, prices, tax, and tip before
           sharing a receipt.{" "}
           <strong>
