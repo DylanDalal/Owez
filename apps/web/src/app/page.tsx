@@ -12,7 +12,7 @@ import { useAuth } from "@/lib/auth";
  * existing auth flow (/me gates on SignInGate, which offers Google + Apple).
  */
 export default function LandingPage() {
-  const { user, isAnonymous } = useAuth();
+  const { user, isAnonymous, signInWithGoogle, signInWithApple } = useAuth();
   const signedIn = !!user && !isAnonymous;
 
   return (
@@ -33,20 +33,32 @@ export default function LandingPage() {
             to sign up.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link
-              href={signedIn ? "/new" : "/me"}
-              className="btn btn-primary text-base"
-            >
-              {signedIn ? "Snap a receipt" : "Continue with Google"}
-            </Link>
             {signedIn ? (
-              <Link href="/me" className="btn">
-                Your dashboard
-              </Link>
+              <>
+                <Link href="/new" className="btn btn-primary text-base">
+                  Snap a receipt
+                </Link>
+                <Link href="/me" className="btn">
+                  Your dashboard
+                </Link>
+              </>
             ) : (
-              <Link href="/me" className="btn">
-                Continue with Apple
-              </Link>
+              <>
+                <button
+                  type="button"
+                  onClick={() => void signInWithGoogle()}
+                  className="btn btn-primary text-base"
+                >
+                  Continue with Google
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void signInWithApple()}
+                  className="btn text-base"
+                >
+                  Continue with Apple
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -194,9 +206,9 @@ function LandingDashboardMock() {
       </div>
       <div className="mt-3 space-y-2">
         {[
-          { name: "Lucali", total: "$62.00", owed: "$22.00" },
-          { name: "Dimes", total: "$48.50", owed: "$0.00" },
-          { name: "Cervos", total: "$91.25", owed: "$34.00" },
+          { name: "Radegast Biergarten", total: "$62.00", owed: "$22.00" },
+          { name: "Costco", total: "$48.50", owed: "$0.00" },
+          { name: "Qahwah House Coffee", total: "$91.25", owed: "$34.00" },
         ].map((r) => (
           <div
             key={r.name}
