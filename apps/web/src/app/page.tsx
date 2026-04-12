@@ -95,7 +95,7 @@ export default function LandingPage() {
         <div className="mt-16 grid items-center gap-10 md:grid-cols-2">
           <div>
             <h3 className="font-display text-2xl font-bold">
-              Items lock in real time.
+              Items update in real time.
             </h3>
             <p className="mt-2 text-[color:var(--muted)]">
               Everyone can see who's claimed which items. Duplicate items? Each order
@@ -140,18 +140,18 @@ function Step({ n, title, body }: { n: number; title: string; body: string }) {
 function LandingLockMock() {
   return (
     <div className="card space-y-2 overflow-hidden p-4 font-mono text-sm">
-      <MockRow name="Fried Chicken Sand." price="$24.00" who="SC" second="MR" />
-      <MockRow name="Mac & Cheese" price="$12.00" who="GR" />
-      <MockRow name="Catfish Strips" price="$22.00" who="AC" second="JH" />
-      <MockRow name="Collard Greens" price="$10.00" who={null} ghost />
+      <MockRow name="Fried Chicken Sand." price="$24.00" who="SC" second="MR" ghost />
+      <MockRow name="Mac & Cheese" price="$12.00" who="GR" ghost />
+      <MockRow name="Catfish Strips" price="$22.00" who="AC" second="JH" ghost />
+      <MockRow name="Collard Greens" price="$10.00" who={null} />
       <div className="receipt-divider" />
       <div className="flex justify-between text-xs text-[color:var(--muted)]">
         <span>SC owes</span>
-        <span>$12.00</span>
+        <span>$18.00</span>
       </div>
       <div className="flex justify-between text-xs text-[color:var(--muted)]">
         <span>MR owes</span>
-        <span>$12.00</span>
+        <span>$6.00</span>
       </div>
       <div className="flex justify-between text-xs text-[color:var(--muted)]">
         <span>GR owes</span>

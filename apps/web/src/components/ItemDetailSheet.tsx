@@ -23,6 +23,8 @@ interface Props {
   units: UnitState[];
   initialUnitIndex: number;
   myName: string;
+  myClaimerId: string;
+  isOwner: boolean;
   onClaim: (args: {
     unitIndex: number;
     portions: number;
@@ -38,6 +40,8 @@ export function ItemDetailSheet({
   units,
   initialUnitIndex,
   myName,
+  myClaimerId,
+  isOwner,
   onClaim,
   onUnclaim,
 }: Props) {
@@ -184,24 +188,38 @@ export function ItemDetailSheet({
         {unit && unit.claims.length > 0 && (
           <div className="mt-4">
             <div className="text-xs font-medium text-[color:var(--muted)]">
-              Already on this unit, tap to remove
+              Already on this unit
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
-              {unit.claims.map((c) => (
-                <button
-                  type="button"
-                  key={c.id}
-                  className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] px-3 py-1 text-sm"
-                  onClick={() => void onUnclaim(c.id)}
-                >
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border-2 border-[color:var(--color-accent-ink)] bg-[color:var(--color-accent)] text-[10px] font-bold text-[color:var(--color-accent-ink)]">
-                    {c.initials || initialsFromName(c.name)}
+              {unit.claims.map((c) => {
+                const canRemove = isOwner || c.claimerId === myClaimerId;
+                return canRemove ? (
+                  <button
+                    type="button"
+                    key={c.id}
+                    className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] px-3 py-1 text-sm"
+                    onClick={() => void onUnclaim(c.id)}
+                  >
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border-2 border-[color:var(--color-accent-ink)] bg-[color:var(--color-accent)] text-[10px] font-bold text-[color:var(--color-accent-ink)]">
+                      {c.initials || initialsFromName(c.name)}
+                    </span>
+                    <span>{c.name}</span>
+                    <span className="text-[color:var(--muted)]">×{c.portions}</span>
+                    <span className="text-xs text-red-500">remove</span>
+                  </button>
+                ) : (
+                  <span
+                    key={c.id}
+                    className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] px-3 py-1 text-sm"
+                  >
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border-2 border-[color:var(--color-accent-ink)] bg-[color:var(--color-accent)] text-[10px] font-bold text-[color:var(--color-accent-ink)]">
+                      {c.initials || initialsFromName(c.name)}
+                    </span>
+                    <span>{c.name}</span>
+                    <span className="text-[color:var(--muted)]">×{c.portions}</span>
                   </span>
-                  <span>{c.name}</span>
-                  <span className="text-[color:var(--muted)]">×{c.portions}</span>
-                  <span className="text-xs text-red-500">remove</span>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

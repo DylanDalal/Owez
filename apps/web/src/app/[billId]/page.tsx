@@ -128,6 +128,8 @@ export default function PublicBillPage({
     return claimerOwes(bill, claims, user.uid);
   }, [bill, claims, user]);
 
+  const hasClaims = !!user && claims.some((c) => c.claimerId === user.uid);
+
   async function quickClaim(itemId: string, unitIndex: number) {
     if (!bill || !user) return;
     if (!myName.trim()) {
@@ -217,7 +219,7 @@ export default function PublicBillPage({
     : [];
 
   return (
-    <main className="pb-40">
+    <main className={hasClaims ? "pb-56" : "pb-40"}>
       <Header />
 
       <section className="mx-auto max-w-2xl px-4 pt-6">
@@ -276,7 +278,13 @@ export default function PublicBillPage({
           className="mt-4"
         />
 
-        <div className="mt-6 grid gap-3">
+        {!myName.trim() && (
+          <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-3 text-center text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+            Enter your name below to start claiming items
+          </div>
+        )}
+
+        <div className={"mt-6 grid gap-3 transition-opacity" + (myName.trim() ? "" : " opacity-40 pointer-events-none")}>
           {bill.items.map((item) => {
             const units = Array.from({ length: item.quantity }, (_, u) =>
               unitMap.get(`${item.id}:${u}`) ?? {
@@ -341,43 +349,6 @@ export default function PublicBillPage({
           </div>
         )}
 
-        {myName && myTotals && (
-          <div className="card mt-6 p-5">
-            <div className="flex items-center justify-between">
-              <div className="font-display text-xl font-bold">Your total</div>
-              <div className="font-display text-2xl tabular-nums">
-                {centsToDisplay(myTotals.totalCents)}
-              </div>
-            </div>
-            {(myTotals.taxCents > 0 || myTotals.tipCents > 0) && (
-              <div className="mt-1 text-xs text-[color:var(--muted)]">
-                includes{" "}
-                {centsToDisplay(myTotals.taxCents + myTotals.tipCents)} tax +
-                tip
-              </div>
-            )}
-            {myTotals.totalCents > 0 && payLinks.length > 0 && (
-              <div className="mt-4 flex flex-col gap-2">
-                {payLinks.map((link) => (
-                  <a
-                    key={link.kind}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener"
-                    className="btn btn-primary w-full"
-                  >
-                    {link.label}
-                  </a>
-                ))}
-              </div>
-            )}
-            {myTotals.totalCents > 0 && payLinks.length === 0 && (
-              <p className="mt-3 text-xs text-[color:var(--muted)]">
-                The creator hasn't set up any payment methods yet.
-              </p>
-            )}
-          </div>
-        )}
       </section>
 
       {detail && detailItem && (
@@ -388,26 +359,70 @@ export default function PublicBillPage({
           units={detailUnits}
           initialUnitIndex={detail.unitIndex}
           myName={myName}
+          myClaimerId={user?.uid ?? ""}
+          isOwner={!!user && user.uid === bill.creatorId}
           onClaim={detailClaim}
           onUnclaim={unclaim}
         />
       )}
 
-      {/* Sticky name input */}
-      <div className="sticky-name-bar">
-        <div className="mx-auto max-w-2xl">
-          <label className="text-xs font-medium text-[color:var(--muted)]">
-            Your name
-          </label>
-          <input
-            ref={nameInputRef}
-            value={myName}
-            onChange={(e) => saveMyName(e.target.value)}
-            placeholder="Type your name to start claiming"
-            className="mt-1"
-          />
+      {/* Sticky bottom bar: name input until they claim, then total + pay */}
+      {hasClaims && myTotals ? (
+        <div className="sticky-name-bar">
+          <div className="mx-auto max-w-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-display text-lg font-bold">Your total</div>
+                {(myTotals.taxCents > 0 || myTotals.tipCents > 0) && (
+                  <div className="text-xs text-[color:var(--muted)]">
+                    includes{" "}
+                    {centsToDisplay(myTotals.taxCents + myTotals.tipCents)} tax
+                    + tip
+                  </div>
+                )}
+              </div>
+              <div className="font-display text-2xl font-bold tabular-nums">
+                {centsToDisplay(myTotals.totalCents)}
+              </div>
+            </div>
+            {myTotals.totalCents > 0 && payLinks.length > 0 && (
+              <div className="mt-3 flex gap-2">
+                {payLinks.map((link) => (
+                  <a
+                    key={link.kind}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener"
+                    className="btn btn-primary flex-1 text-center"
+                  >
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            )}
+            {myTotals.totalCents > 0 && payLinks.length === 0 && (
+              <p className="mt-2 text-xs text-[color:var(--muted)]">
+                The creator hasn't set up any payment methods yet.
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="sticky-name-bar">
+          <div className="mx-auto max-w-2xl">
+            <label className="text-xs font-medium text-[color:var(--muted)]">
+              Your name
+            </label>
+            <input
+              ref={nameInputRef}
+              value={myName}
+              onChange={(e) => saveMyName(e.target.value)}
+              placeholder="Type your name to start claiming"
+              className="mt-1"
+            />
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className="fixed left-1/2 top-16 z-50 -translate-x-1/2 rounded-full bg-black px-4 py-2 text-sm text-white shadow">
