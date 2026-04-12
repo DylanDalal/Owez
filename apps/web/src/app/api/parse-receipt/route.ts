@@ -152,15 +152,91 @@ function normalize(inference: MindeeInference): ParsedReceipt {
     Array.isArray(lineField?.items)
       ? lineField.items.map((li) => {
           const inner = (li.fields ?? {}) as Record<string, MindeeField | undefined>;
+          const qty = readNumber(inner["quantity"]) ?? 1;
+          const totalPrice = readNumber(inner["total_price"]);
+          const unitPrice = readNumber(inner["unit_price"]);
+          // Mindee's total_price is the line total (qty × unit). We store
+          // per-unit price, so prefer unit_price when available, otherwise
+          // divide total_price by quantity to avoid double-counting.
+          const perUnit =
+            unitPrice ?? (totalPrice != null && qty > 1 ? totalPrice / qty : totalPrice);
           return {
             name: readString(inner["description"]) ?? "Item",
-            priceCents: toCents(readNumber(inner["total_price"])),
-            quantity: readNumber(inner["quantity"]) ?? 1,
+            priceCents: toCents(perUnit),
+            quantity: qty,
           };
         })
       : [];
 
-  return { merchant, items, subtotalCents, taxCents, tipCents, totalCents };
+  const { items: fixed, warning } = reconcileItems(items, subtotalCents, taxCents, tipCents, totalCents);
+
+  const result: ParsedReceipt = { merchant, items: fixed, subtotalCents, taxCents, tipCents, totalCents };
+  if (warning) result.warning = warning;
+  return result;
+}
+
+/**
+ * Sanity-check the parsed items against the receipt's known totals.
+ *
+ * 1. If the item sum is ~2× the expected subtotal, prices are almost certainly
+ *    line totals that got multiplied by quantity again — divide them out.
+ * 2. After any correction, if the item sum still diverges from the expected
+ *    subtotal by more than 5%, return a warning so the UI can flag it.
+ */
+function reconcileItems(
+  items: ParsedReceipt["items"],
+  subtotalCents: number,
+  taxCents: number,
+  tipCents: number,
+  totalCents: number,
+): { items: ParsedReceipt["items"]; warning?: string } {
+  if (items.length === 0) return { items };
+
+  // Pick the best reference total — prefer subtotal, fall back to
+  // total minus tax/tip.
+  const expected =
+    subtotalCents > 0
+      ? subtotalCents
+      : totalCents > 0
+        ? totalCents - taxCents - tipCents
+        : 0;
+
+  const computedSum = items.reduce((s, it) => s + it.priceCents * it.quantity, 0);
+
+  // No reference total to compare against — can't verify.
+  if (expected <= 0) {
+    return { items, warning: "Couldn't verify item prices — no subtotal on receipt." };
+  }
+  if (computedSum <= 0) return { items };
+
+  // If computed total is roughly double (within 10% tolerance of 2×), the
+  // prices are almost certainly line totals that got multiplied again.
+  const ratio = computedSum / expected;
+  let corrected = items;
+  let didCorrect = false;
+  if (ratio >= 1.8 && ratio <= 2.2) {
+    corrected = items.map((it) =>
+      it.quantity > 1
+        ? { ...it, priceCents: Math.round(it.priceCents / it.quantity) }
+        : it,
+    );
+    didCorrect = true;
+  }
+
+  // Check if the (possibly corrected) sum matches the expected total.
+  const finalSum = corrected.reduce((s, it) => s + it.priceCents * it.quantity, 0);
+  const drift = Math.abs(finalSum - expected) / expected;
+
+  if (didCorrect && drift <= 0.05) {
+    return { items: corrected, warning: "Some item prices were auto-corrected — double-check quantities." };
+  }
+  if (didCorrect) {
+    return { items: corrected, warning: "Item prices were auto-corrected but still don't match the receipt total. Please review all prices." };
+  }
+  if (drift > 0.05) {
+    return { items, warning: "Item prices don't add up to the receipt total. Please review." };
+  }
+  return { items };
 }
 
 /* ---------- helpers ---------- */

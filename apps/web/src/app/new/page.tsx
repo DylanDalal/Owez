@@ -53,6 +53,7 @@ function NewBillInner() {
   const [venmo, setVenmo] = useState("");
   const [cashapp, setCashapp] = useState("");
   const [zellePhone, setZellePhone] = useState("");
+  const [parseWarning, setParseWarning] = useState<string | null>(null);
 
   // Prefill payment handles from the user's profile (if any).
   useEffect(() => {
@@ -94,6 +95,7 @@ function NewBillInner() {
       );
       setTaxCents(parsed.taxCents);
       setTipCents(parsed.tipCents);
+      setParseWarning(parsed.warning ?? null);
       setStage("edit");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to read receipt");
@@ -241,6 +243,22 @@ function NewBillInner() {
               />
             </label>
 
+            {parseWarning && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                <span className="mt-0.5 shrink-0 text-base leading-none">&#x26A0;</span>
+                <div>
+                  <span>{parseWarning}</span>
+                  <button
+                    type="button"
+                    onClick={() => setParseWarning(null)}
+                    className="ml-2 underline opacity-70 hover:opacity-100"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="card p-4">
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-lg font-bold">Items</h2>
@@ -277,16 +295,16 @@ function NewBillInner() {
                       className="text-right tabular-nums"
                     />
                     <input
-                      type="number"
-                      min={1}
-                      step={1}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       value={it.quantity}
                       onChange={(e) =>
                         updateItem(it.id, {
                           quantity: Math.max(1, Number(e.target.value) || 1),
                         })
                       }
-                      className="text-center"
+                      className="text-right tabular-nums"
                     />
                     <button
                       type="button"
@@ -374,6 +392,8 @@ function NewBillInner() {
               <label className="block">
                 <span className="text-sm">Phone (Zelle only)</span>
                 <input
+                  type="tel"
+                  inputMode="tel"
                   value={zellePhone}
                   onChange={(e) => setZellePhone(e.target.value)}
                   placeholder="+1 555 123 4567"

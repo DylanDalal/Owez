@@ -141,9 +141,9 @@ export function ItemDetailSheet({
               Split into
             </span>
             <input
-              type="number"
-              min={1}
-              max={50}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               disabled={!!unit && unit.claims.length > 0}
               value={effectiveSplit}
               onChange={(e) =>
@@ -151,7 +151,7 @@ export function ItemDetailSheet({
                   Math.max(1, Math.min(50, Number(e.target.value) || 1)),
                 )
               }
-              className="mt-1"
+              className="mt-1 text-right tabular-nums"
             />
           </label>
           <label className="block">
@@ -159,9 +159,9 @@ export function ItemDetailSheet({
               My portions
             </span>
             <input
-              type="number"
-              min={1}
-              max={effectiveSplit}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={portions}
               onChange={(e) =>
                 setPortions(
@@ -171,7 +171,7 @@ export function ItemDetailSheet({
                   ),
                 )
               }
-              className="mt-1"
+              className="mt-1 text-right tabular-nums"
             />
           </label>
         </div>

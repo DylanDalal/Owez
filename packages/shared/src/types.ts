@@ -106,6 +106,8 @@ export interface ParsedReceipt {
   taxCents: number;
   tipCents: number;
   totalCents: number;
+  /** Set when the parser had to auto-correct item prices to match the receipt total. */
+  warning?: string;
 }
 
 /**

@@ -177,6 +177,8 @@ function AccountInner() {
           <div>
             <label className="text-sm font-medium">Phone (Zelle only)</label>
             <input
+              type="tel"
+              inputMode="tel"
               value={zellePhone}
               onChange={(e) => setZellePhone(e.target.value)}
               placeholder="+1 555 123 4567"
