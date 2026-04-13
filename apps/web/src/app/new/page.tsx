@@ -15,7 +15,8 @@ import { AdSlot } from "@/components/AdSlot";
 import { useAuth } from "@/lib/auth";
 import { createBill, makeId, newBillId } from "@/lib/bills";
 import { upsertProfile } from "@/lib/profiles";
-import { centsToDisplay, dollarInputToCents } from "@/lib/format";
+import { CentsInput } from "@/components/CentsInput";
+import { centsToDisplay } from "@/lib/format";
 
 /**
  * Create flow, three stages:
@@ -283,16 +284,9 @@ function NewBillInner() {
                       }
                       placeholder="Item"
                     />
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={(it.priceCents / 100).toFixed(2)}
-                      onChange={(e) =>
-                        updateItem(it.id, {
-                          priceCents: dollarInputToCents(e.target.value),
-                        })
-                      }
-                      className="text-right tabular-nums"
+                    <CentsInput
+                      cents={it.priceCents}
+                      onChange={(c) => updateItem(it.id, { priceCents: c })}
                     />
                     <input
                       type="text"
@@ -323,22 +317,18 @@ function NewBillInner() {
               <div className="grid grid-cols-2 gap-4">
                 <label className="block">
                   <span className="text-sm">Tax</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={(taxCents / 100).toFixed(2)}
-                    onChange={(e) => setTaxCents(dollarInputToCents(e.target.value))}
-                    className="mt-1 text-right tabular-nums"
+                  <CentsInput
+                    cents={taxCents}
+                    onChange={setTaxCents}
+                    className="mt-1"
                   />
                 </label>
                 <label className="block">
                   <span className="text-sm">Tip</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={(tipCents / 100).toFixed(2)}
-                    onChange={(e) => setTipCents(dollarInputToCents(e.target.value))}
-                    className="mt-1 text-right tabular-nums"
+                  <CentsInput
+                    cents={tipCents}
+                    onChange={setTipCents}
+                    className="mt-1"
                   />
                   <div className="mt-2 flex gap-2">
                     {[15, 18, 20].map((pct) => (

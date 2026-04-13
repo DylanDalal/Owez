@@ -208,10 +208,21 @@ select {
   width: 100%;
   outline: none;
   font: inherit;
+  /* Prevent iOS zoom on focus — Safari zooms if font-size < 16px */
+  font-size: max(1rem, 16px);
+  /* Remove iOS default input styling */
+  -webkit-appearance: none;
+  appearance: none;
+  /* Prevent text size adjustment on orientation change */
+  -webkit-text-size-adjust: 100%;
 }
 input:focus,
 textarea:focus,
 select:focus {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px rgba(46, 242, 163, 0.25);
+}
+/* Prevent iOS inner shadow on inputs */
+input:not([type="file"]):not([type="checkbox"]):not([type="radio"]) {
+  -webkit-appearance: none;
 }
