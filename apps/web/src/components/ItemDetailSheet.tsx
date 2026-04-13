@@ -1,21 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { BillItem, UnitState } from "@owez/shared";
 import { initialsFromName } from "@owez/shared";
 import { centsToDisplay } from "@/lib/format";
 
-/**
- * Bottom-sheet / modal that opens on long-press of a ReceiptItemCard. Lets
- * the current viewer:
- *   - pick which unit of the item to act on (if quantity > 1)
- *   - split a unit N ways and claim X portions of that split
- *   - remove another person's claim
- *
- * The first claim on a unit sets its splitInto; subsequent claims must
- * match. The sheet disables the split input once a unit already has claims
- * to reflect that constraint.
- */
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -51,14 +40,49 @@ export function ItemDetailSheet({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  if (!open) return null;
+  const unit = open ? units[unitIndex] : undefined;
 
-  const unit = units[unitIndex];
-  // Once a unit has claims, its splitInto is fixed — echo that through the UI.
+  // When opening on a fully-claimed unit with no split, auto-propose a 2-way
+  // split so the user can jump right in.
+  useEffect(() => {
+    if (!open || !unit) return;
+    if (
+      unit.claims.length > 0 &&
+      unit.splitInto <= 1 &&
+      unit.portionsClaimed >= 1
+    ) {
+      setSplitInto(2);
+      setPortions(1);
+    } else if (unit.claims.length === 0) {
+      setSplitInto(1);
+      setPortions(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, unitIndex]);
+
+  if (!open || !unit) return null;
+
+  // If the unit already has claims with a set split, respect it. Otherwise
+  // use whatever the user is proposing (which may be the auto-2 from above).
   const effectiveSplit =
-    unit && unit.claims.length > 0 ? unit.splitInto : splitInto;
-  const free = Math.max(0, effectiveSplit - (unit?.portionsClaimed ?? 0));
-  const centsPerPortion = Math.round(item.priceCents / Math.max(1, effectiveSplit));
+    unit.claims.length > 0 && unit.splitInto > 1 ? unit.splitInto : splitInto;
+
+  // My existing claim on this unit, if any.
+  const myClaim = unit.claims.find((c) => c.claimerId === myClaimerId);
+
+  // Portions available: total split minus claimed, but add back my own
+  // portions since I can re-allocate them.
+  const othersPortions = unit.claims
+    .filter((c) => c.claimerId !== myClaimerId)
+    .reduce((s, c) => s + c.portions, 0);
+  const free = Math.max(0, effectiveSplit - othersPortions);
+
+  const centsPerPortion = Math.round(
+    item.priceCents / Math.max(1, effectiveSplit),
+  );
+
+  // The other person's name for the "split with X?" prompt.
+  const otherClaim = unit.claims.find((c) => c.claimerId !== myClaimerId);
 
   async function confirm() {
     setErr(null);
@@ -110,6 +134,13 @@ export function ItemDetailSheet({
           </button>
         </div>
 
+        {/* Prompt when someone else already claimed the whole thing */}
+        {otherClaim && unit.splitInto <= 1 && !myClaim && (
+          <div className="card mt-4 border-[color:var(--color-accent)] p-3 text-sm">
+            {otherClaim.name} already claimed this item. Split it with them?
+          </div>
+        )}
+
         {item.quantity > 1 && (
           <div className="mt-5">
             <div className="text-xs font-medium text-[color:var(--muted)]">
@@ -148,7 +179,7 @@ export function ItemDetailSheet({
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              disabled={!!unit && unit.claims.length > 0}
+              disabled={unit.claims.length > 0 && unit.splitInto > 1}
               value={effectiveSplit}
               onChange={(e) =>
                 setSplitInto(
@@ -171,7 +202,7 @@ export function ItemDetailSheet({
                 setPortions(
                   Math.max(
                     1,
-                    Math.min(effectiveSplit, Number(e.target.value) || 1),
+                    Math.min(free, Number(e.target.value) || 1),
                   ),
                 )
               }
@@ -182,10 +213,11 @@ export function ItemDetailSheet({
 
         <div className="mt-3 text-sm text-[color:var(--muted)]">
           You'd pay {centsToDisplay(centsPerPortion * portions)} ·{" "}
-          {free} portion{free === 1 ? "" : "s"} free on this unit.
+          {free - portions} portion{free - portions === 1 ? "" : "s"} free
+          {myClaim ? " (updating your claim)" : ""}.
         </div>
 
-        {unit && unit.claims.length > 0 && (
+        {unit.claims.length > 0 && (
           <div className="mt-4">
             <div className="text-xs font-medium text-[color:var(--muted)]">
               Already on this unit
@@ -204,7 +236,9 @@ export function ItemDetailSheet({
                       {c.initials || initialsFromName(c.name)}
                     </span>
                     <span>{c.name}</span>
-                    <span className="text-[color:var(--muted)]">×{c.portions}</span>
+                    <span className="text-[color:var(--muted)]">
+                      ×{c.portions}
+                    </span>
                     <span className="text-xs text-red-500">remove</span>
                   </button>
                 ) : (
@@ -216,7 +250,9 @@ export function ItemDetailSheet({
                       {c.initials || initialsFromName(c.name)}
                     </span>
                     <span>{c.name}</span>
-                    <span className="text-[color:var(--muted)]">×{c.portions}</span>
+                    <span className="text-[color:var(--muted)]">
+                      ×{c.portions}
+                    </span>
                   </span>
                 );
               })}
@@ -232,7 +268,11 @@ export function ItemDetailSheet({
           disabled={busy || !myName || portions < 1 || portions > free}
           className="btn btn-primary mt-5 w-full"
         >
-          {busy ? "Claiming…" : "Claim my portion"}
+          {busy
+            ? "Saving…"
+            : myClaim
+              ? "Update my portion"
+              : "Claim my portion"}
         </button>
       </div>
     </div>

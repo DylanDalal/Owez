@@ -93,15 +93,20 @@ export function assertClaimAllowed(
   }
   if (existingOnUnit.length === 0) return;
 
-  const existing = existingOnUnit[0]!.splitInto;
-  if (claim.splitInto !== existing) {
+  const existingSplit = existingOnUnit[0]!.splitInto;
+  // Allow upgrading the split (e.g. 1→2 when someone wants to split with the
+  // existing claimer). The new split must be >= the existing one so we don't
+  // shrink anyone out.
+  if (claim.splitInto < existingSplit) {
     throw new Error(
-      `This unit is already split ${existing} ways. Pick a matching portion size.`,
+      `This unit is already split ${existingSplit} ways. Pick a matching or larger split.`,
     );
   }
+  // Use the larger split as the effective denominator.
+  const effectiveSplit = Math.max(existingSplit, claim.splitInto);
   const alreadyClaimed = existingOnUnit.reduce((s, c) => s + c.portions, 0);
-  if (alreadyClaimed + claim.portions > existing) {
-    const left = existing - alreadyClaimed;
+  if (alreadyClaimed + claim.portions > effectiveSplit) {
+    const left = effectiveSplit - alreadyClaimed;
     throw new Error(
       `Only ${left} portion${left === 1 ? "" : "s"} left on this unit.`,
     );

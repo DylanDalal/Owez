@@ -19,6 +19,7 @@ import { useAuth } from "@/lib/auth";
 import {
   claimItemUnit,
   deleteClaimDoc,
+  updateClaimDoc,
   subscribeToBill,
   subscribeToClaims,
 } from "@/lib/bills";
@@ -56,6 +57,7 @@ export default function PublicBillPage({
   } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const nameBarRef = useRef<HTMLDivElement | null>(null);
 
   // Ensure we have a uid before writing any claims.
   useEffect(() => {
@@ -104,13 +106,19 @@ export default function PublicBillPage({
     }
   }
 
-  function focusName(reason?: string) {
+  function focusName() {
     nameInputRef.current?.focus();
     nameInputRef.current?.scrollIntoView({
       behavior: "smooth",
       block: "center",
     });
-    flashToast(reason ?? "Enter your name first");
+    // Pulse the name bar green
+    const bar = nameBarRef.current;
+    if (bar) {
+      bar.classList.remove("pulse");
+      void bar.offsetWidth; // force reflow to restart animation
+      bar.classList.add("pulse");
+    }
   }
 
   function flashToast(msg: string, ms = 2000) {
@@ -162,16 +170,31 @@ export default function PublicBillPage({
       focusName();
       throw new Error("Enter your name first");
     }
-    await claimItemUnit(bill.id, {
-      itemId: detail.itemId,
-      unitIndex: args.unitIndex,
-      portions: args.portions,
-      splitInto: args.splitInto,
-      claimerId: user.uid,
-      name: myName.trim(),
-      initials: initialsFromName(myName),
-      photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
-    });
+    // If the user already has a claim on this unit, update it instead of
+    // creating a duplicate.
+    const existing = claims.find(
+      (c) =>
+        c.itemId === detail.itemId &&
+        c.unitIndex === args.unitIndex &&
+        c.claimerId === user.uid,
+    );
+    if (existing) {
+      await updateClaimDoc(bill.id, existing.id, {
+        portions: args.portions,
+        splitInto: args.splitInto,
+      });
+    } else {
+      await claimItemUnit(bill.id, {
+        itemId: detail.itemId,
+        unitIndex: args.unitIndex,
+        portions: args.portions,
+        splitInto: args.splitInto,
+        claimerId: user.uid,
+        name: myName.trim(),
+        initials: initialsFromName(myName),
+        photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
+      });
+    }
   }
 
   async function unclaim(claimId: string) {
@@ -279,12 +302,16 @@ export default function PublicBillPage({
         />
 
         {!myName.trim() && (
-          <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-3 text-center text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          <div className="card mt-6 border-[color:var(--color-accent)] p-3 text-center text-sm">
             Enter your name below to start claiming items
           </div>
         )}
 
-        <div className={"mt-6 grid gap-3 transition-opacity" + (myName.trim() ? "" : " opacity-40 pointer-events-none")}>
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+        <div
+          className={"mt-6 grid gap-3 transition-opacity" + (myName.trim() ? "" : " opacity-40")}
+          onClick={myName.trim() ? undefined : () => focusName()}
+        >
           {bill.items.map((item) => {
             const units = Array.from({ length: item.quantity }, (_, u) =>
               unitMap.get(`${item.id}:${u}`) ?? {
@@ -408,7 +435,7 @@ export default function PublicBillPage({
           </div>
         </div>
       ) : (
-        <div className="sticky-name-bar">
+        <div ref={nameBarRef} className="sticky-name-bar">
           <div className="mx-auto max-w-2xl">
             <label className="text-xs font-medium text-[color:var(--muted)]">
               Your name

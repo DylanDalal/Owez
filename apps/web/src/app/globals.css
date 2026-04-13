@@ -133,6 +133,19 @@ main {
   z-index: 40;
 }
 
+/* Pulse animation for the name bar when user taps grayed-out items. */
+@keyframes pulseAccent {
+  0%, 100% { border-color: var(--border); }
+  25%, 75% { border-color: var(--color-accent); box-shadow: 0 0 0 3px rgba(46, 242, 163, 0.25); }
+}
+.sticky-name-bar.pulse {
+  animation: pulseAccent 1s ease;
+}
+.sticky-name-bar.pulse input {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(46, 242, 163, 0.25);
+}
+
 /* Stamp: circular, accent ring, slight rotation — used for claim initials. */
 .stamp {
   display: inline-flex;
@@ -149,6 +162,11 @@ main {
   letter-spacing: 0.04em;
   border: 2px solid var(--color-accent-ink);
   transform: rotate(-6deg);
+}
+
+/* Half-stamp: clip to left half for partial claims. */
+.stamp-half {
+  clip-path: inset(-2px 50% -2px -2px);
 }
 
 /* Button component. .btn + .btn-primary / .btn-ghost. */

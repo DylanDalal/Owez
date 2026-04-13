@@ -49,14 +49,14 @@ export default function LandingPage() {
                   onClick={() => void signInWithGoogle()}
                   className="btn btn-primary text-base"
                 >
-                  Continue with Google
+                  Sign up with Google
                 </button>
                 <button
                   type="button"
                   onClick={() => void signInWithApple()}
                   className="btn text-base"
                 >
-                  Continue with Apple
+                  Sign up with Apple
                 </button>
               </>
             )}

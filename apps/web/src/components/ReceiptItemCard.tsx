@@ -10,6 +10,7 @@ import { centsToDisplay } from "@/lib/format";
  *
  * Interaction model:
  *   - Plain tap   → claim one whole portion of the next available unit.
+ *                    If fully claimed, opens detail sheet to split.
  *   - Long-press / right-click → open ItemDetailSheet for splitting or
  *                                 removing someone else's claim.
  *   - Taps on an existing stamp → pop a name tooltip; if it's yours, offer
@@ -23,9 +24,7 @@ export interface ReceiptItemCardProps {
   myName: string;
   /** Current viewer's Firebase uid, used to detect "this claim is mine". */
   myClaimerId: string;
-  /** Current viewer's profile photo, if they're signed in with Google/Apple.
-   * When present, the preview hint stamp shows their avatar instead of
-   * initials so signed-in users see their real face before they claim. */
+  /** Current viewer's profile photo, if they're signed in with Google/Apple. */
   myPhotoURL?: string;
   onQuickClaim: (unitIndex: number) => void;
   onOpenDetail: (unitIndex: number) => void;
@@ -44,19 +43,14 @@ export function ReceiptItemCard({
 }: ReceiptItemCardProps) {
   const myInitials = initialsFromName(myName);
 
-  // Totals across all units — used for the "N left" badge and the gate that
-  // flips tap behavior from "claim" to "view".
   const totalPortions = units.reduce((s, u) => s + (u.splitInto || 1), 0);
   const claimedPortions = units.reduce((s, u) => s + u.portionsClaimed, 0);
   const fullyClaimed = claimedPortions >= totalPortions;
 
-  // Which unit a plain tap would land on — the first one with a free portion.
   const nextAvailableUnit = units.findIndex(
     (u) => u.portionsClaimed < (u.splitInto || 1),
   );
 
-  // All claims flattened, deduped by claimer+name so a single person with
-  // multiple portions only renders one stamp.
   const allClaims = units.flatMap((u) => u.claims);
   const uniqueClaimants = dedupeClaimants(allClaims);
 
@@ -80,8 +74,8 @@ export function ReceiptItemCard({
   function handleClick() {
     if (!myName) return; // parent focuses the name input instead
     if (nextAvailableUnit === -1) {
-      // Fully claimed — tapping opens the detail sheet so the viewer can
-      // see who's on it (and long-press still lets them "steal" a portion).
+      // Fully claimed — open the detail sheet so user can split with the
+      // existing claimer.
       onOpenDetail(0);
       return;
     }
@@ -125,19 +119,24 @@ export function ReceiptItemCard({
 
       {uniqueClaimants.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {uniqueClaimants.map((c) => (
-            <Stamp
-              key={c.key}
-              claim={c.claim}
-              mine={c.claim.claimerId === myClaimerId}
-              onUnclaim={() => onUnclaim(c.claim.id)}
-            />
-          ))}
+          {uniqueClaimants.map((c) => {
+            const isPartial =
+              c.claim.splitInto > 1 &&
+              c.claim.portions < c.claim.splitInto;
+            return (
+              <Stamp
+                key={c.key}
+                claim={c.claim}
+                mine={c.claim.claimerId === myClaimerId}
+                partial={isPartial}
+                onUnclaim={() => onUnclaim(c.claim.id)}
+              />
+            );
+          })}
         </div>
       )}
 
-      {/* Faded preview stamp in the bottom-right hints at what a tap will do.
-          Signed-in users see their avatar; guests see their initials. */}
+      {/* Faded preview stamp in the bottom-right hints at what a tap will do. */}
       {!fullyClaimed && (myInitials || myPhotoURL) && (
         <div className="pointer-events-none absolute bottom-3 right-3 opacity-30">
           {myPhotoURL ? (
@@ -173,10 +172,12 @@ function dedupeClaimants(claims: Claim[]) {
 function Stamp({
   claim,
   mine,
+  partial,
   onUnclaim,
 }: {
   claim: Claim;
   mine: boolean;
+  partial: boolean;
   onUnclaim: () => void;
 }) {
   const initials = claim.initials || initialsFromName(claim.name);
@@ -195,16 +196,30 @@ function Stamp({
         <img
           src={claim.photoURL}
           alt={claim.name}
-          className="h-8 w-8 -rotate-6 rounded-full border-2 border-[color:var(--color-accent-ink)] object-cover"
+          className={
+            "h-8 w-8 -rotate-6 rounded-full border-2 border-[color:var(--color-accent-ink)] object-cover" +
+            (partial ? " stamp-half" : "")
+          }
         />
       ) : (
-        <span className="stamp animate-[stampIn_260ms_cubic-bezier(0.2,0.9,0.3,1.2)] !h-8 !w-8 !min-w-8 !p-0 !text-xs">
+        <span
+          className={
+            "stamp animate-[stampIn_260ms_cubic-bezier(0.2,0.9,0.3,1.2)] !h-8 !w-8 !min-w-8 !p-0 !text-xs" +
+            (partial ? " stamp-half" : "")
+          }
+        >
           {initials}
         </span>
       )}
       {open && (
         <span className="absolute left-0 top-full z-20 mt-1 whitespace-nowrap rounded-md border border-[color:var(--border)] bg-[color:var(--card)] px-2 py-1 text-xs shadow">
           {claim.name}
+          {claim.splitInto > 1 && (
+            <span className="text-[color:var(--muted)]">
+              {" "}
+              ({claim.portions}/{claim.splitInto})
+            </span>
+          )}
           {mine && (
             <button
               className="ml-2 underline"

@@ -38,7 +38,7 @@ export function SignInGate({ children }: { children: ReactNode }) {
               className="btn btn-primary w-full"
             >
               <GoogleMark />
-              Continue with Google
+              Sign up with Google
             </button>
             <button
               type="button"
@@ -46,7 +46,7 @@ export function SignInGate({ children }: { children: ReactNode }) {
               className="btn w-full"
             >
               <AppleMark />
-              Continue with Apple
+              Sign up with Apple
             </button>
           </div>
 

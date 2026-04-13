@@ -9,6 +9,7 @@ import {
   query,
   setDoc,
   Timestamp,
+  updateDoc,
   where,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -168,6 +169,16 @@ export async function claimItemUnit(
 
   const ref = await addDoc(claimsCol, payload);
   return ref.id;
+}
+
+/** Update an existing claim's portions/splitInto. Rules allow the claimer only. */
+export async function updateClaimDoc(
+  billId: BillId,
+  claimId: ClaimId,
+  data: { portions: number; splitInto: number },
+): Promise<void> {
+  const { db } = getFirebase();
+  await updateDoc(doc(db, "bills", billId, "claims", claimId), data);
 }
 
 /** Delete a single claim doc. Rules allow the claimer or the bill creator. */
