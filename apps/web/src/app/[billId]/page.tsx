@@ -144,12 +144,16 @@ export default function PublicBillPage({
       focusName();
       return;
     }
+    // Match the unit's existing split so we claim one portion of it rather
+    // than overwriting with splitInto=1.
+    const unit = unitMap.get(`${itemId}:${unitIndex}`);
+    const splitInto = unit && unit.splitInto > 1 ? unit.splitInto : 1;
     try {
       await claimItemUnit(bill.id, {
         itemId,
         unitIndex,
         portions: 1,
-        splitInto: 1,
+        splitInto,
         claimerId: user.uid,
         name: myName.trim(),
         initials: initialsFromName(myName),
