@@ -1,14 +1,13 @@
 "use client";
 
+import { useRef, useState } from "react";
+
 /**
- * Calculator-style dollar input. The user types raw digits and they fill in
- * from the right:
- *   type "1"    → 0.01
- *   type "2"    → 0.12
- *   type "3"    → 1.23
- *   backspace   → 0.12
+ * Venmo-style dollar input. The user types normally — digits grow to the left
+ * of the cursor, backspace deletes as expected, and decimals are just another
+ * character. If no decimal is entered, ".00" is appended on blur.
  *
- * Value is stored as integer cents — no floating-point parsing needed.
+ * Value is stored as integer cents — no floating-point precision issues.
  */
 interface CentsInputProps {
   cents: number;
@@ -17,68 +16,85 @@ interface CentsInputProps {
 }
 
 export function CentsInput({ cents, onChange, className }: CentsInputProps) {
-  const display = formatCents(cents);
+  const [raw, setRaw] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // When not focused, show the formatted value from the cents prop.
+  const display = raw !== null ? raw : formatCents(cents);
 
-    if (e.key === "Backspace") {
-      e.preventDefault();
-      onChange(Math.floor(cents / 10));
-      return;
-    }
+  function handleFocus() {
+    // On focus, show the current value as an editable string.
+    // If it's 0, start empty so the user can just type.
+    const formatted = cents === 0 ? "" : formatCents(cents);
+    setRaw(formatted);
 
-    if (e.key >= "0" && e.key <= "9") {
-      e.preventDefault();
-      const next = cents * 10 + Number(e.key);
-      if (next <= 9999999) onChange(next);
-      return;
-    }
-
-    // Block anything else that would mutate the field
-    if (e.key.length === 1) {
-      e.preventDefault();
-    }
+    // Put cursor at the end on next tick.
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) {
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
+    });
   }
 
-  // Mobile virtual keyboards often don't fire usable keyDown events (key is
-  // "Unidentified"). beforeinput always carries the real data.
-  function handleBeforeInput(e: React.FormEvent<HTMLInputElement>) {
-    const ie = e.nativeEvent as InputEvent;
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value;
 
-    // Deletion — only handle if keyDown didn't already (i.e. mobile path)
-    if (ie.inputType === "deleteContentBackward" || ie.inputType === "deleteContentForward") {
-      e.preventDefault();
-      onChange(Math.floor(cents / 10));
+    // Allow empty string (user clearing the field).
+    if (value === "") {
+      setRaw("");
       return;
     }
 
-    // Insertion — extract digits from whatever the keyboard sent
-    if (ie.data) {
-      e.preventDefault();
-      let current = cents;
-      for (const ch of ie.data) {
-        if (ch >= "0" && ch <= "9") {
-          const next = current * 10 + Number(ch);
-          if (next <= 9999999) current = next;
-        }
-      }
-      if (current !== cents) onChange(current);
+    // Filter: only digits and at most one decimal point.
+    // Allow at most 2 digits after the decimal.
+    const cleaned = value.replace(/[^\d.]/g, "");
+
+    // Prevent multiple decimal points.
+    const parts = cleaned.split(".");
+    if (parts.length > 2) return;
+
+    // Limit to 2 decimal places.
+    if (parts[1] !== undefined && parts[1].length > 2) return;
+
+    // Cap at a reasonable maximum ($99,999.99).
+    const num = Number(cleaned);
+    if (num > 99999.99) return;
+
+    setRaw(cleaned);
+  }
+
+  function handleBlur() {
+    // Parse whatever the user typed into cents.
+    const value = raw ?? "";
+    if (value === "" || value === ".") {
+      onChange(0);
+      setRaw(null);
       return;
     }
 
-    // Block anything unexpected
-    e.preventDefault();
+    const num = Number(value);
+    if (Number.isNaN(num)) {
+      onChange(0);
+      setRaw(null);
+      return;
+    }
+
+    const newCents = Math.round(num * 100);
+    onChange(newCents);
+    setRaw(null);
   }
 
   return (
     <input
+      ref={inputRef}
       type="text"
-      inputMode="numeric"
+      inputMode="decimal"
       value={display}
-      onKeyDown={handleKeyDown}
-      onBeforeInput={handleBeforeInput}
-      onChange={() => {}}
+      onFocus={handleFocus}
+      onChange={handleChange}
+      onBlur={handleBlur}
       className={"text-right tabular-nums " + (className ?? "")}
     />
   );

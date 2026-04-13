@@ -36,7 +36,9 @@ export function ItemDetailSheet({
 }: Props) {
   const [unitIndex, setUnitIndex] = useState(initialUnitIndex);
   const [splitInto, setSplitInto] = useState(1);
+  const [splitRaw, setSplitRaw] = useState<string | null>(null);
   const [portions, setPortions] = useState(1);
+  const [portionsRaw, setPortionsRaw] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -180,13 +182,18 @@ export function ItemDetailSheet({
               inputMode="numeric"
               pattern="[0-9]*"
               disabled={unit.claims.length > 0 && unit.splitInto > 1}
-              value={effectiveSplit}
-              onChange={(e) =>
-                setSplitInto(
-                  Math.max(1, Math.min(50, Number(e.target.value) || 1)),
-                )
-              }
-              className="mt-1 text-right tabular-nums"
+              value={splitRaw !== null ? splitRaw : effectiveSplit}
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, "");
+                setSplitRaw(v);
+              }}
+              onFocus={() => setSplitRaw(String(effectiveSplit))}
+              onBlur={() => {
+                const n = Math.max(1, Math.min(50, Number(splitRaw) || 1));
+                setSplitInto(n);
+                setSplitRaw(null);
+              }}
+              className="mt-1 tabular-nums"
             />
           </label>
           <label className="block">
@@ -197,16 +204,18 @@ export function ItemDetailSheet({
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              value={portions}
-              onChange={(e) =>
-                setPortions(
-                  Math.max(
-                    1,
-                    Math.min(free, Number(e.target.value) || 1),
-                  ),
-                )
-              }
-              className="mt-1 text-right tabular-nums"
+              value={portionsRaw !== null ? portionsRaw : portions}
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, "");
+                setPortionsRaw(v);
+              }}
+              onFocus={() => setPortionsRaw(String(portions))}
+              onBlur={() => {
+                const n = Math.max(1, Math.min(free, Number(portionsRaw) || 1));
+                setPortions(n);
+                setPortionsRaw(null);
+              }}
+              className="mt-1 tabular-nums"
             />
           </label>
         </div>

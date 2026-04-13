@@ -28,6 +28,27 @@ import { centsToDisplay } from "@/lib/format";
  * On save: also back-fills blank fields on the user's UserProfile so the
  * next receipt auto-populates its payment handles.
  */
+function QuantityInput({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const [raw, setRaw] = useState<string | null>(null);
+  const display = raw !== null ? raw : String(value);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      value={display}
+      onFocus={() => setRaw(String(value))}
+      onChange={(e) => setRaw(e.target.value.replace(/\D/g, ""))}
+      onBlur={() => {
+        onChange(Math.max(1, Number(raw) || 1));
+        setRaw(null);
+      }}
+      className="tabular-nums"
+    />
+  );
+}
+
 export default function NewBillPage() {
   return (
     <SignInGate>
@@ -287,17 +308,9 @@ function NewBillInner() {
                       cents={it.priceCents}
                       onChange={(c) => updateItem(it.id, { priceCents: c })}
                     />
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
+                    <QuantityInput
                       value={it.quantity}
-                      onChange={(e) =>
-                        updateItem(it.id, {
-                          quantity: Math.max(1, Number(e.target.value) || 1),
-                        })
-                      }
-                      className="text-right tabular-nums"
+                      onChange={(q) => updateItem(it.id, { quantity: q })}
                     />
                     <button
                       type="button"
