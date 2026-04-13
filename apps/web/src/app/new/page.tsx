@@ -245,7 +245,7 @@ function NewBillInner() {
             </label>
 
             {parseWarning && (
-              <div className="card flex items-start gap-3 border-[color:var(--color-accent)] p-3 text-sm">
+              <div className="card flex items-start gap-3 !border-[color:var(--color-accent)] p-3 text-sm">
                 <div>
                   <span>{parseWarning}</span>
                   <button

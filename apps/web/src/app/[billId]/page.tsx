@@ -306,7 +306,7 @@ export default function PublicBillPage({
         />
 
         {!myName.trim() && (
-          <div className="card mt-6 border-[color:var(--color-accent)] p-3 text-center text-sm">
+          <div className="card mt-6 !border-[color:var(--color-accent)] p-3 text-center text-sm">
             Enter your name below to start claiming items
           </div>
         )}

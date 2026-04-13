@@ -136,7 +136,7 @@ export function ItemDetailSheet({
 
         {/* Prompt when someone else already claimed the whole thing */}
         {otherClaim && unit.splitInto <= 1 && !myClaim && (
-          <div className="card mt-4 border-[color:var(--color-accent)] p-3 text-sm">
+          <div className="card mt-4 !border-[color:var(--color-accent)] p-3 text-sm">
             {otherClaim.name} already claimed this item. Split it with them?
           </div>
         )}
