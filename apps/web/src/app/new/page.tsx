@@ -62,7 +62,8 @@ type Stage = "upload" | "parsing" | "edit" | "saving";
 function NewBillInner() {
   const { user, profile } = useAuth();
   const router = useRouter();
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const libraryRef = useRef<HTMLInputElement | null>(null);
+  const cameraRef = useRef<HTMLInputElement | null>(null);
 
   const [stage, setStage] = useState<Stage>("upload");
   const [error, setError] = useState<string | null>(null);
@@ -217,7 +218,7 @@ function NewBillInner() {
               Snap a photo of your receipt and we'll read every line item.
             </p>
             <input
-              ref={fileRef}
+              ref={cameraRef}
               type="file"
               accept="image/*"
               capture="environment"
@@ -227,13 +228,32 @@ function NewBillInner() {
                 if (f) void handleFilePicked(f);
               }}
             />
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="btn btn-primary mt-6"
-            >
-              Choose photo
-            </button>
+            <input
+              ref={libraryRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleFilePicked(f);
+              }}
+            />
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+              <button
+                type="button"
+                onClick={() => cameraRef.current?.click()}
+                className="btn btn-primary"
+              >
+                Take photo
+              </button>
+              <button
+                type="button"
+                onClick={() => libraryRef.current?.click()}
+                className="btn"
+              >
+                Choose photo
+              </button>
+            </div>
             {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
           </div>
         )}

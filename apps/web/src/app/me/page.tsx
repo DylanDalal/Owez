@@ -10,6 +10,7 @@ import { SignInGate } from "@/components/SignInGate";
 import { useAuth } from "@/lib/auth";
 import { deleteBill, getClaimsOnce, subscribeToMyBills } from "@/lib/bills";
 import { centsToDisplay } from "@/lib/format";
+import { SwipeToDelete } from "@/components/SwipeToDelete";
 
 /**
  * Creator dashboard — lists every bill the signed-in user has created, with
@@ -30,6 +31,7 @@ interface Row {
   subtotalCents: number;
   claimedCents: number;
   outstandingCents: number;
+  overpaidCents: number;
 }
 
 function MyBillsInner() {
@@ -73,6 +75,7 @@ function MyBillsInner() {
             subtotalCents: subtotal,
             claimedCents: claimed,
             outstandingCents: Math.max(0, bill.totalCents - claimed),
+            overpaidCents: Math.max(0, claimed - bill.totalCents),
           };
         }),
       );
@@ -119,52 +122,57 @@ function MyBillsInner() {
               </Link>
             </div>
           )}
-          {rows?.map(({ bill, outstandingCents }) => (
-            <div
+          {rows?.map(({ bill, outstandingCents, overpaidCents, claimedCents }) => (
+            <SwipeToDelete
               key={bill.id}
-              className="group card flex items-center p-4 hover:border-[color:var(--color-accent)]"
+              onDelete={() => void deleteBill(bill.id)}
+              confirmMessage="Delete this receipt? This can't be undone."
             >
-              <Link
-                href={`/${bill.id}?owner=1`}
-                className="flex min-w-0 flex-1 items-center justify-between"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-semibold">
-                    {bill.title || "Untitled"}
-                  </div>
-                  <div className="text-xs text-[color:var(--muted)]">
-                    {formatDate(bill.createdAt)} · {bill.items.length} item
-                    {bill.items.length === 1 ? "" : "s"}
-                  </div>
-                </div>
-              </Link>
-              <div className="ml-auto flex items-center gap-2">
-                <button
-                  type="button"
-                  aria-label="Delete receipt"
-                  className="hidden shrink-0 rounded-lg p-2 text-[color:var(--muted)] hover:text-red-500 group-hover:block"
-                  onClick={() => {
-                    if (confirm("Delete this receipt? This can't be undone.")) {
-                      void deleteBill(bill.id);
-                    }
-                  }}
+              <div className="group card flex items-center p-4 hover:border-[color:var(--color-accent)]">
+                <Link
+                  href={`/${bill.id}?owner=1`}
+                  className="flex min-w-0 flex-1 items-center justify-between"
                 >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <path d="M2 4h12M5.3 4V2.7a1 1 0 0 1 1-1h3.4a1 1 0 0 1 1 1V4M6.5 7v4.5M9.5 7v4.5M3.5 4l.7 9a1.5 1.5 0 0 0 1.5 1.3h4.6a1.5 1.5 0 0 0 1.5-1.3l.7-9" />
-                  </svg>
-                </button>
-                <div className="text-right">
-                  <div className="tabular-nums">
-                    {centsToDisplay(bill.totalCents)}
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold">
+                      {bill.title || "Untitled"}
+                    </div>
+                    <div className="text-xs text-[color:var(--muted)]">
+                      {formatDate(bill.createdAt)} · {bill.items.length} item
+                      {bill.items.length === 1 ? "" : "s"}
+                    </div>
                   </div>
-                  <div className="text-xs text-[color:var(--muted)]">
-                    {outstandingCents <= 0
-                      ? "Settled"
-                      : `Still owed ${centsToDisplay(outstandingCents)}`}
+                </Link>
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label="Delete receipt"
+                    className="hidden shrink-0 rounded-lg p-2 text-[color:var(--muted)] hover:text-red-500 group-hover:block"
+                    onClick={() => {
+                      if (confirm("Delete this receipt? This can't be undone.")) {
+                        void deleteBill(bill.id);
+                      }
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <path d="M2 4h12M5.3 4V2.7a1 1 0 0 1 1-1h3.4a1 1 0 0 1 1 1V4M6.5 7v4.5M9.5 7v4.5M3.5 4l.7 9a1.5 1.5 0 0 0 1.5 1.3h4.6a1.5 1.5 0 0 0 1.5-1.3l.7-9" />
+                    </svg>
+                  </button>
+                  <div className="text-right">
+                    <div className="tabular-nums">
+                      {centsToDisplay(bill.totalCents)}
+                    </div>
+                    <div className="text-xs text-[color:var(--muted)]">
+                      {overpaidCents > 0
+                        ? `Paid ${centsToDisplay(claimedCents)} · +${centsToDisplay(overpaidCents)}`
+                        : outstandingCents <= 0
+                          ? "Settled"
+                          : `Still owed ${centsToDisplay(outstandingCents)}`}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </SwipeToDelete>
           ))}
         </div>
       </section>

@@ -153,6 +153,7 @@ export async function claimItemUnit(
   assertClaimAllowed(onUnit, {
     portions: data.portions,
     splitInto: data.splitInto,
+    duplicate: data.duplicate,
   });
 
   const payload: Record<string, unknown> = {
@@ -166,6 +167,7 @@ export async function claimItemUnit(
     createdAt: Date.now(),
   };
   if (data.photoURL) payload.photoURL = data.photoURL;
+  if (data.duplicate) payload.duplicate = true;
 
   const ref = await addDoc(claimsCol, payload);
   return ref.id;
@@ -238,5 +240,6 @@ function claimFromDoc(id: string, data: Record<string, unknown>): Claim {
           ? data.createdAt
           : Date.now(),
     photoURL: typeof data.photoURL === "string" ? data.photoURL : undefined,
+    duplicate: data.duplicate === true ? true : undefined,
   };
 }

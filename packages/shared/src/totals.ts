@@ -50,16 +50,19 @@ export function groupClaimsByUnit(
   for (const c of claims) {
     const unit = out.get(`${c.itemId}:${c.unitIndex}`);
     if (!unit) continue; // stale claim pointing at a deleted item/unit
+    unit.claims.push(c);
+    // Duplicate claims sit alongside the split but don't influence its math.
+    if (c.duplicate) continue;
     // The first claim sets the splitInto for the unit. Any later claim that
     // disagrees (shouldn't happen with rules + client validation) raises the
     // splitInto rather than lowering it.
-    if (unit.claims.length === 0) {
+    const splitClaims = unit.claims.filter((x) => !x.duplicate);
+    if (splitClaims.length === 1) {
       unit.splitInto = c.splitInto;
     } else if (c.splitInto > unit.splitInto) {
       unit.splitInto = c.splitInto;
     }
     unit.portionsClaimed += c.portions;
-    unit.claims.push(c);
   }
   return out;
 }
@@ -80,7 +83,7 @@ export function unitsForItem(item: BillItem, claims: Claim[]): UnitState[] {
  */
 export function assertClaimAllowed(
   existingOnUnit: Claim[],
-  claim: { portions: number; splitInto: number },
+  claim: { portions: number; splitInto: number; duplicate?: boolean },
 ): void {
   if (claim.portions < 1) {
     throw new Error("You need to claim at least one portion.");
@@ -91,9 +94,13 @@ export function assertClaimAllowed(
   if (claim.portions > claim.splitInto) {
     throw new Error("You can't take more portions than the split allows.");
   }
-  if (existingOnUnit.length === 0) return;
+  // Duplicate claims are independent charges, so they bypass the split
+  // validation entirely.
+  if (claim.duplicate) return;
+  const splitOnly = existingOnUnit.filter((c) => !c.duplicate);
+  if (splitOnly.length === 0) return;
 
-  const existingSplit = existingOnUnit[0]!.splitInto;
+  const existingSplit = splitOnly[0]!.splitInto;
   // Allow upgrading the split (e.g. 1→2 when someone wants to split with the
   // existing claimer). The new split must be >= the existing one so we don't
   // shrink anyone out.
@@ -104,7 +111,7 @@ export function assertClaimAllowed(
   }
   // Use the larger split as the effective denominator.
   const effectiveSplit = Math.max(existingSplit, claim.splitInto);
-  const alreadyClaimed = existingOnUnit.reduce((s, c) => s + c.portions, 0);
+  const alreadyClaimed = splitOnly.reduce((s, c) => s + c.portions, 0);
   if (alreadyClaimed + claim.portions > effectiveSplit) {
     const left = effectiveSplit - alreadyClaimed;
     throw new Error(
@@ -144,10 +151,15 @@ export function owedByAllClaimers(
     const item = itemById.get(unit.itemId);
     if (!item) continue;
 
+    // Duplicate claims sit outside the split: each one owes the full item
+    // price independently (creator wants to be paid, over-collection is OK).
+    const splitClaims = unit.claims.filter((c) => !c.duplicate);
+    const duplicateClaims = unit.claims.filter((c) => c.duplicate);
+
     const shares = distributeCentsEvenly(item.priceCents, unit.splitInto);
 
     // Sort deterministically so assignment is stable across clients.
-    const sorted = [...unit.claims].sort(
+    const sorted = [...splitClaims].sort(
       (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
     );
 
@@ -162,6 +174,13 @@ export function owedByAllClaimers(
       itemsCentsByClaimer.set(
         claim.claimerId,
         (itemsCentsByClaimer.get(claim.claimerId) ?? 0) + cents,
+      );
+    }
+
+    for (const claim of duplicateClaims) {
+      itemsCentsByClaimer.set(
+        claim.claimerId,
+        (itemsCentsByClaimer.get(claim.claimerId) ?? 0) + item.priceCents,
       );
     }
   }

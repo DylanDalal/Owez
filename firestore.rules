@@ -52,7 +52,7 @@ service cloud.firestore {
                       && request.resource.data.keys().hasOnly([
                            'itemId', 'unitIndex', 'portions', 'splitInto',
                            'claimerId', 'name', 'initials', 'createdAt',
-                           'photoURL'
+                           'photoURL', 'duplicate'
                          ]);
 
         // Update: claimer can update their own claim, shape still enforced.

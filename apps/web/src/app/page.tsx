@@ -142,7 +142,7 @@ function LandingLockMock() {
     <div className="card space-y-2 overflow-hidden p-4 font-mono text-sm">
       <MockRow name="Fried Chicken Sand." price="$24.00" who="SC" second="MR" ghost />
       <MockRow name="Mac & Cheese" price="$12.00" who="GR" ghost />
-      <MockRow name="Catfish Strips" price="$22.00" who="AC" second="JH" ghost />
+      <MockRow name="Catfish Strips" price="$22.00" who="AC" second="JH" half ghost />
       <MockRow name="Collard Greens" price="$10.00" who={null} />
       <div className="receipt-divider" />
       <div className="flex justify-between text-xs text-[color:var(--muted)]">
@@ -166,14 +166,17 @@ function MockRow({
   price,
   who,
   second,
+  half,
   ghost,
 }: {
   name: string;
   price: string;
   who: string | null;
   second?: string;
+  half?: boolean;
   ghost?: boolean;
 }) {
+  const stampCls = "stamp !h-7 !w-7 !min-w-7 !p-0 !text-xs" + (half ? " stamp-half" : "");
   return (
     <div
       className={
@@ -185,10 +188,10 @@ function MockRow({
       <div className="flex items-center gap-2">
         <span className="tabular-nums">{price}</span>
         {who && (
-          <span className="stamp !h-7 !w-7 !min-w-7 !p-0 !text-xs">{who}</span>
+          <span className={stampCls}>{who}</span>
         )}
         {second && (
-          <span className="stamp !h-7 !w-7 !min-w-7 !p-0 !text-xs">
+          <span className={stampCls}>
             {second}
           </span>
         )}

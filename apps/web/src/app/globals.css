@@ -64,6 +64,7 @@ body {
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
+  overflow-x: hidden;
 }
 
 body {

@@ -18,6 +18,7 @@ interface Props {
     unitIndex: number;
     portions: number;
     splitInto: number;
+    duplicate?: boolean;
   }) => Promise<void>;
   onUnclaim: (claimId: string) => Promise<void>;
 }
@@ -44,18 +45,21 @@ export function ItemDetailSheet({
 
   const unit = open ? units[unitIndex] : undefined;
 
-  // When opening on a fully-claimed unit with no split, auto-propose a 2-way
-  // split so the user can jump right in.
+  // Seed split / portions from the unit's current state when opening.
   useEffect(() => {
     if (!open || !unit) return;
-    if (
+    if (unit.claims.length > 0 && unit.splitInto > 1) {
+      // Existing split — start with that value (user can still change it).
+      setSplitInto(unit.splitInto);
+      setPortions(1);
+    } else if (
       unit.claims.length > 0 &&
       unit.splitInto <= 1 &&
       unit.portionsClaimed >= 1
     ) {
       setSplitInto(2);
       setPortions(1);
-    } else if (unit.claims.length === 0) {
+    } else {
       setSplitInto(1);
       setPortions(1);
     }
@@ -64,18 +68,19 @@ export function ItemDetailSheet({
 
   if (!open || !unit) return null;
 
-  // If the unit already has claims with a set split, respect it. Otherwise
-  // use whatever the user is proposing (which may be the auto-2 from above).
-  const effectiveSplit =
-    unit.claims.length > 0 && unit.splitInto > 1 ? unit.splitInto : splitInto;
+  const effectiveSplit = splitInto;
 
-  // My existing claim on this unit, if any.
-  const myClaim = unit.claims.find((c) => c.claimerId === myClaimerId);
+  // My existing (non-duplicate) claim on this unit, if any — duplicates
+  // are independent charges so we don't treat them as the "my portion" claim.
+  const myClaim = unit.claims.find(
+    (c) => c.claimerId === myClaimerId && !c.duplicate,
+  );
 
   // Portions available: total split minus claimed, but add back my own
-  // portions since I can re-allocate them.
+  // portions since I can re-allocate them. Duplicate claims are excluded
+  // because they sit outside the split.
   const othersPortions = unit.claims
-    .filter((c) => c.claimerId !== myClaimerId)
+    .filter((c) => c.claimerId !== myClaimerId && !c.duplicate)
     .reduce((s, c) => s + c.portions, 0);
   const free = Math.max(0, effectiveSplit - othersPortions);
 
@@ -84,7 +89,10 @@ export function ItemDetailSheet({
   );
 
   // The other person's name for the "split with X?" prompt.
-  const otherClaim = unit.claims.find((c) => c.claimerId !== myClaimerId);
+  const otherClaim = unit.claims.find(
+    (c) => c.claimerId !== myClaimerId && !c.duplicate,
+  );
+  const anyClaim = unit.claims.some((c) => !c.duplicate);
 
   async function confirm() {
     setErr(null);
@@ -98,6 +106,25 @@ export function ItemDetailSheet({
         unitIndex,
         portions,
         splitInto: effectiveSplit,
+      });
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not claim");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDuplicate() {
+    setErr(null);
+    setBusy(true);
+    try {
+      if (!myName) throw new Error("Enter your name first.");
+      await onClaim({
+        unitIndex,
+        portions: 1,
+        splitInto: 1,
+        duplicate: true,
       });
       onClose();
     } catch (e) {
@@ -181,7 +208,6 @@ export function ItemDetailSheet({
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              disabled={unit.claims.length > 0 && unit.splitInto > 1}
               value={splitRaw !== null ? splitRaw : effectiveSplit}
               onChange={(e) => {
                 const v = e.target.value.replace(/\D/g, "");
@@ -223,7 +249,6 @@ export function ItemDetailSheet({
         <div className="mt-3 text-sm text-[color:var(--muted)]">
           You'd pay {centsToDisplay(centsPerPortion * portions)} ·{" "}
           {free - portions} portion{free - portions === 1 ? "" : "s"} free
-          {myClaim ? " (updating your claim)" : ""}.
         </div>
 
         {unit.claims.length > 0 && (
@@ -246,7 +271,7 @@ export function ItemDetailSheet({
                     </span>
                     <span>{c.name}</span>
                     <span className="text-[color:var(--muted)]">
-                      ×{c.portions}
+                      {c.duplicate ? "duplicate" : `×${c.portions}`}
                     </span>
                     <span className="text-xs text-red-500">remove</span>
                   </button>
@@ -260,7 +285,7 @@ export function ItemDetailSheet({
                     </span>
                     <span>{c.name}</span>
                     <span className="text-[color:var(--muted)]">
-                      ×{c.portions}
+                      {c.duplicate ? "duplicate" : `×${c.portions}`}
                     </span>
                   </span>
                 );
@@ -281,8 +306,25 @@ export function ItemDetailSheet({
             ? "Saving…"
             : myClaim
               ? "Update my portion"
-              : "Claim my portion"}
+              : "Split Amount"}
         </button>
+
+        {anyClaim && (
+          <>
+            <button
+              type="button"
+              onClick={() => void confirmDuplicate()}
+              disabled={busy || !myName}
+              className="btn mt-2 w-full"
+            >
+              Duplicate Claim
+            </button>
+            <p className="mt-2 text-xs text-[color:var(--muted)]">
+              Pick this if you ordered one of these too — you'll owe the full{" "}
+              {centsToDisplay(item.priceCents)} on top of the existing claim.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

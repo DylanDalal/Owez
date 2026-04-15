@@ -92,6 +92,14 @@ export interface Claim {
   createdAt: number;
   /** Optional profile photo for Google/Apple-authed claimants. */
   photoURL?: string;
+  /**
+   * Marks a claim as an independent full-price duplicate rather than part of
+   * the unit's split. A duplicate claim owes the full item price, does not
+   * consume a portion of the split, and can coexist with existing claims on
+   * the same unit. Used for "I also ordered one of these" situations where
+   * the receipt under-counted the quantity.
+   */
+  duplicate?: boolean;
 }
 
 /** Response shape from /api/parse-receipt — Mindee output normalized. */

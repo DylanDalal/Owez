@@ -168,20 +168,25 @@ export default function PublicBillPage({
     unitIndex: number;
     portions: number;
     splitInto: number;
+    duplicate?: boolean;
   }) {
     if (!bill || !user || !detail) return;
     if (!myName.trim()) {
       focusName();
       throw new Error("Enter your name first");
     }
-    // If the user already has a claim on this unit, update it instead of
-    // creating a duplicate.
-    const existing = claims.find(
-      (c) =>
-        c.itemId === detail.itemId &&
-        c.unitIndex === args.unitIndex &&
-        c.claimerId === user.uid,
-    );
+    // Duplicate claims always create a fresh doc — they're independent
+    // charges, not updates. Regular claims update the user's existing claim
+    // on this unit if one exists.
+    const existing = args.duplicate
+      ? undefined
+      : claims.find(
+          (c) =>
+            c.itemId === detail.itemId &&
+            c.unitIndex === args.unitIndex &&
+            c.claimerId === user.uid &&
+            !c.duplicate,
+        );
     if (existing) {
       await updateClaimDoc(bill.id, existing.id, {
         portions: args.portions,
@@ -197,6 +202,7 @@ export default function PublicBillPage({
         name: myName.trim(),
         initials: initialsFromName(myName),
         photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
+        duplicate: args.duplicate,
       });
     }
   }
