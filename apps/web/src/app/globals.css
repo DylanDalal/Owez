@@ -214,6 +214,14 @@ main {
   border-radius: 18px;
 }
 
+/* Inside a swipe-to-delete slider, the outer wrapper owns the rounded
+ * clip and the red action sits behind — flatten the card so its own
+ * rounded corners don't expose the red button in the corner gaps. */
+.swipe-slider > .card {
+  border-radius: 0;
+  border: none;
+}
+
 /* Form elements get the same token styling by default — individual pages
  * override via Tailwind utilities when they need something custom. */
 input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),

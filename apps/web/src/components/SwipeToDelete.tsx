@@ -95,7 +95,7 @@ export function SwipeToDelete({
       </button>
       <div
         ref={sliderRef}
-        className="[&>.card]:rounded-none"
+        className="swipe-slider"
         style={{
           transform: `translateX(${offset}px)`,
           transition: dragging ? "none" : "transform 200ms ease",
