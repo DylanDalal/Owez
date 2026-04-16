@@ -10,15 +10,22 @@ import {
   type ReactNode,
 } from "react";
 import {
+  getRedirectResult,
   onAuthStateChanged,
   signInAnonymously,
   signInWithPopup,
+  signInWithRedirect,
   signOut as fbSignOut,
   type User,
 } from "firebase/auth";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import type { UserProfile } from "@owez/shared";
 import { appleProvider, getFirebase, googleProvider } from "./firebase";
+
+function isMobile(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+}
 
 /**
  * Central auth context. Two identities exist in Owez:
@@ -49,9 +56,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Track auth state.
+  // Track auth state. On mount, also pick up any pending redirect result
+  // (from signInWithRedirect used on mobile).
   useEffect(() => {
     const { auth } = getFirebase();
+    getRedirectResult(auth).catch(() => {});
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
@@ -79,12 +88,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = useCallback(async () => {
     const { auth } = getFirebase();
-    await signInWithPopup(auth, googleProvider());
+    const provider = googleProvider();
+    if (isMobile()) {
+      await signInWithRedirect(auth, provider);
+    } else {
+      await signInWithPopup(auth, provider);
+    }
   }, []);
 
   const signInWithApple = useCallback(async () => {
     const { auth } = getFirebase();
-    await signInWithPopup(auth, appleProvider());
+    const provider = appleProvider();
+    if (isMobile()) {
+      await signInWithRedirect(auth, provider);
+    } else {
+      await signInWithPopup(auth, provider);
+    }
   }, []);
 
   const signInAnon = useCallback(async () => {
