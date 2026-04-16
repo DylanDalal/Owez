@@ -1,17 +1,11 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 const ACTION_WIDTH = 88;
 const OPEN_THRESHOLD = 44;
 const HORIZONTAL_INTENT_PX = 10;
 
-/**
- * iOS-style swipe-to-delete row. Swipe left to reveal a red "Delete" action;
- * tap it to confirm. Swiping right or tapping elsewhere snaps the row back.
- * Requires a horizontal drag of >10px dominant over vertical to engage, so
- * vertical scrolling is unaffected.
- */
 export function SwipeToDelete({
   children,
   onDelete,
@@ -27,6 +21,39 @@ export function SwipeToDelete({
   const startY = useRef<number | null>(null);
   const baseOffset = useRef(0);
   const engaged = useRef(false);
+  const sliderRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = sliderRef.current;
+    if (!el) return;
+
+    function handleTouchMove(e: TouchEvent) {
+      const t = e.touches[0];
+      if (!t || startX.current === null || startY.current === null) return;
+      const dx = t.clientX - startX.current;
+      const dy = t.clientY - startY.current;
+      if (!engaged.current) {
+        if (
+          Math.abs(dx) > HORIZONTAL_INTENT_PX &&
+          Math.abs(dx) > Math.abs(dy) * 1.5
+        ) {
+          engaged.current = true;
+          setDragging(true);
+        } else {
+          return;
+        }
+      }
+      e.preventDefault();
+      const next = Math.min(
+        0,
+        Math.max(-ACTION_WIDTH, baseOffset.current + dx),
+      );
+      setOffset(next);
+    }
+
+    el.addEventListener("touchmove", handleTouchMove, { passive: false });
+    return () => el.removeEventListener("touchmove", handleTouchMove);
+  }, []);
 
   function onTouchStart(e: React.TouchEvent) {
     const t = e.touches[0];
@@ -35,26 +62,6 @@ export function SwipeToDelete({
     startY.current = t.clientY;
     baseOffset.current = offset;
     engaged.current = false;
-  }
-
-  function onTouchMove(e: React.TouchEvent) {
-    const t = e.touches[0];
-    if (!t || startX.current === null || startY.current === null) return;
-    const dx = t.clientX - startX.current;
-    const dy = t.clientY - startY.current;
-    if (!engaged.current) {
-      if (
-        Math.abs(dx) > HORIZONTAL_INTENT_PX &&
-        Math.abs(dx) > Math.abs(dy) * 1.5
-      ) {
-        engaged.current = true;
-        setDragging(true);
-      } else {
-        return;
-      }
-    }
-    const next = Math.min(0, Math.max(-ACTION_WIDTH, baseOffset.current + dx));
-    setOffset(next);
   }
 
   function onTouchEnd() {
@@ -75,7 +82,7 @@ export function SwipeToDelete({
   }
 
   return (
-    <div className="relative overflow-hidden rounded-2xl">
+    <div className="relative overflow-hidden rounded-[18px]">
       <button
         type="button"
         onClick={handleDeleteClick}
@@ -87,12 +94,13 @@ export function SwipeToDelete({
         Delete
       </button>
       <div
+        ref={sliderRef}
+        className="[&>.card]:rounded-none"
         style={{
           transform: `translateX(${offset}px)`,
           transition: dragging ? "none" : "transform 200ms ease",
         }}
         onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
       >
