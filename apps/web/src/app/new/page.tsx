@@ -117,7 +117,10 @@ function NewBillInner() {
         })),
       );
       setTaxCents(parsed.taxCents);
-      setTipCents(parsed.tipCents);
+      // Don't auto-fill tip from the parser — auto-gratuity lines and OCR
+      // misreads have charged friends for tips the creator never meant to
+      // add. Start at 0 and let the user pick 15/18/20% or type a value.
+      setTipCents(0);
       setParseWarning(parsed.warning ?? null);
       setStage("edit");
     } catch (e) {
@@ -132,7 +135,10 @@ function NewBillInner() {
     );
   }
   function removeItem(id: string) {
-    setItems((prev) => prev.filter((it) => it.id !== id));
+    const it = items.find((x) => x.id === id);
+    const label = it?.name.trim() ? `"${it.name.trim()}"` : "this item";
+    if (!confirm(`Delete ${label}?`)) return;
+    setItems((prev) => prev.filter((x) => x.id !== id));
   }
   function addItem() {
     setItems((prev) => [
@@ -143,6 +149,11 @@ function NewBillInner() {
   function setTipPercent(pct: number) {
     setTipCents(Math.round((subtotalCents * pct) / 100));
   }
+  function setTaxPercent(pct: number) {
+    setTaxCents(Math.round((subtotalCents * pct) / 100));
+  }
+  const taxPercent =
+    subtotalCents > 0 ? (taxCents / subtotalCents) * 100 : 0;
 
   const paymentMethods: PaymentMethods = useMemo(() => {
     const m: PaymentMethods = {};
@@ -348,11 +359,26 @@ function NewBillInner() {
 
               <div className="grid grid-cols-2 gap-4">
                 <label className="block">
-                  <span className="text-sm">Tax</span>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm">Tax</span>
+                    <span className="text-xs tabular-nums text-[color:var(--muted)]">
+                      {taxPercent.toFixed(1)}%
+                    </span>
+                  </div>
                   <CentsInput
                     cents={taxCents}
                     onChange={setTaxCents}
                     className="mt-1"
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={15}
+                    step={0.1}
+                    value={Math.min(15, taxPercent)}
+                    onChange={(e) => setTaxPercent(Number(e.target.value))}
+                    aria-label="Tax percentage"
+                    className="mt-2 w-full"
                   />
                 </label>
                 <label className="block">

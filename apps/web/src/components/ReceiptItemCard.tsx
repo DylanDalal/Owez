@@ -52,7 +52,6 @@ export function ReceiptItemCard({
   );
 
   const allClaims = units.flatMap((u) => u.claims);
-  const uniqueClaimants = dedupeClaimants(allClaims);
 
   const [pressTimer, setPressTimer] = useState<ReturnType<
     typeof setTimeout
@@ -117,21 +116,23 @@ export function ReceiptItemCard({
         )}
       </div>
 
-      {uniqueClaimants.length > 0 && (
+      {allClaims.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {uniqueClaimants.map((c) => {
-            const isPartial =
-              c.claim.splitInto > 1 &&
-              c.claim.portions < c.claim.splitInto;
-            return (
+          {allClaims.flatMap((claim) => {
+            // Each split portion renders as its own half-stamp so someone
+            // claiming 3/3 of a 3-way split shows three half-stamps, not a
+            // single full one. Duplicate and whole-item claims stay full.
+            const isSplit = !claim.duplicate && claim.splitInto > 1;
+            const count = isSplit ? Math.max(1, claim.portions) : 1;
+            return Array.from({ length: count }, (_, i) => (
               <Stamp
-                key={c.key}
-                claim={c.claim}
-                mine={c.claim.claimerId === myClaimerId}
-                partial={isPartial}
-                onUnclaim={() => onUnclaim(c.claim.id)}
+                key={`${claim.id}:${i}`}
+                claim={claim}
+                mine={claim.claimerId === myClaimerId}
+                partial={isSplit}
+                onUnclaim={() => onUnclaim(claim.id)}
               />
-            );
+            ));
           })}
         </div>
       )}
@@ -155,18 +156,6 @@ export function ReceiptItemCard({
       )}
     </div>
   );
-}
-
-function dedupeClaimants(claims: Claim[]) {
-  const out: Array<{ key: string; claim: Claim }> = [];
-  const seen = new Set<string>();
-  for (const c of claims) {
-    const key = `${c.claimerId}:${c.name}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ key, claim: c });
-  }
-  return out;
 }
 
 function Stamp({

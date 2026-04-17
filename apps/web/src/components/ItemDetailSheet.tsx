@@ -136,11 +136,11 @@ export function ItemDetailSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex select-none items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="card w-full rounded-b-none rounded-t-2xl p-5 sm:max-w-md sm:rounded-2xl"
+        className="card w-full select-none rounded-b-none rounded-t-2xl p-5 sm:max-w-md sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">

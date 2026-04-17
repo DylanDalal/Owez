@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Venmo-style dollar input. The user types normally — digits grow to the left
@@ -68,22 +68,34 @@ export function CentsInput({ cents, onChange, className }: CentsInputProps) {
   function handleBlur() {
     // Parse whatever the user typed into cents.
     const value = raw ?? "";
-    if (value === "" || value === ".") {
-      onChange(0);
-      setRaw(null);
-      return;
+    let newCents = 0;
+    if (value !== "" && value !== ".") {
+      const num = Number(value);
+      if (!Number.isNaN(num)) newCents = Math.round(num * 100);
     }
-
-    const num = Number(value);
-    if (Number.isNaN(num)) {
-      onChange(0);
-      setRaw(null);
-      return;
-    }
-
-    const newCents = Math.round(num * 100);
     onChange(newCents);
-    setRaw(null);
+    // Show the formatted value immediately — don't wait for the parent's
+    // cents prop to round-trip through re-render. This avoids a glitch where
+    // ".2" stays visible after blur because the display string hadn't yet
+    // flipped over to formatCents(cents).
+    setRaw(formatCents(newCents));
+  }
+
+  // Once unfocused, drop our local raw display so the cents prop becomes the
+  // source of truth again (e.g. the "18%" tip quick-button updates it).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (raw !== null && document.activeElement !== el) {
+      setRaw(null);
+    }
+  }, [raw, cents]);
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      inputRef.current?.blur();
+    }
   }
 
   return (
@@ -95,6 +107,7 @@ export function CentsInput({ cents, onChange, className }: CentsInputProps) {
       onFocus={handleFocus}
       onChange={handleChange}
       onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
       className={"text-right tabular-nums " + (className ?? "")}
     />
   );
