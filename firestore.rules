@@ -3,24 +3,24 @@ rules_version = '2';
 // Owez Firestore security rules.
 //
 // Model:
-//  - bills/{billId}                 — the bill doc, owned by its creator.
+//  - trips/{tripId}                 — trip doc (multi-receipt group), owned by creator.
+//  - bills/{billId}                 — bill doc (single receipt), owned by its creator.
+//                                     can optionally reference a trip via tripId.
 //  - bills/{billId}/claims/{claimId} — one doc per (itemId, unitIndex) claim.
 //                                     doc id is auto-generated; `claimerId`
 //                                     field is pinned to request.auth.uid.
 //  - users/{uid}                    — user profile (payment handles, photo).
 //                                     publicly readable so claimants can see
-//                                     the bill creator's display name/photo.
+//                                     creator/member display names/photos.
 //
 // Design notes:
-//  - Anyone can READ a bill, since the whole point is that the creator
-//    shares the link with friends. Security here relies on UUID unguessability,
-//    not on authorization.
-//  - Writing a bill requires auth and request.auth.uid == creatorId.
+//  - Anyone can READ a trip or bill, since the whole point is that the creator
+//    shares links with friends. Security relies on UUID unguessability, not auth.
+//  - Writing trips/bills requires auth and request.auth.uid == creatorId.
 //  - Each claim doc stores its claimerId as a field; rules make sure it
 //    matches the authenticated uid on create/update.
-//  - Bill creators can delete any claim on their own bill (e.g. to clean up
-//    stale claims before sending a second share link). Anonymous friends can
-//    only touch their own claims.
+//  - Trip/Bill creators can delete any claim on their own trip/bill (for cleanup).
+//    Anonymous friends can only touch their own claims.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -30,6 +30,17 @@ service cloud.firestore {
       // and avatar on their bill view without a separate lookup.
       allow read: if true;
       allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /trips/{tripId} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.creatorId
+                    && request.resource.data.id == tripId;
+
+      allow update, delete: if request.auth != null
+                            && request.auth.uid == resource.data.creatorId;
     }
 
     match /bills/{billId} {

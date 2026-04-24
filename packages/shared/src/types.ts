@@ -62,6 +62,8 @@ export interface Bill {
   tipCents: number;
   totalCents: number;
   paymentMethods: PaymentMethods;
+  /** Optional reference to parent trip if this bill is part of a multi-receipt trip. */
+  tripId?: string;
 }
 
 /**
@@ -131,5 +133,28 @@ export interface UserProfile {
   cashapp?: string;
   zellePhone?: string;
   createdAt: number;
+  updatedAt?: number;
+}
+
+/** A user who has joined a trip and claimed items. */
+export interface TripMember {
+  userId: string;
+  name: string;
+  photoURL?: string;
+  joinedAt: number;
+}
+
+/** A trip document containing multiple shared receipts/bills. */
+export interface Trip {
+  id: string;
+  creatorId: string;
+  creatorName?: string;
+  creatorPhotoURL?: string;
+  createdAt: number;
+  title: string;
+  description?: string;
+  members: TripMember[];
+  receiptIds: string[];
+  status: "active" | "settled";
   updatedAt?: number;
 }
