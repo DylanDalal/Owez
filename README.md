@@ -25,18 +25,18 @@ All three consume `@owez/shared` so the bill data model lives in exactly one pla
 |---|---|
 | Web + PWA | Next.js 15, Tailwind 4, deployed on Vercel |
 | iOS app | Expo SDK 52, expo-router |
-| OCR | [Mindee Receipt API](https://platform.mindee.com/) — 250 pages/mo free forever |
+| OCR | [OpenAI Receipt API](https://platform.openai.com/) — 250 pages/mo free forever |
 | Auth / DB | Firebase Spark plan (Auth + Firestore only — Storage is Blaze-only, so we skip saving receipt images) |
 | Payments | Deep links only — no processing (`venmo://`, `cash.app/$tag`, `sms:` for Zelle) |
 
-Mindee was picked over AWS Textract because Textract's free tier expires after three months; Mindee stays free. The Mindee key lives only on the Next.js server (`/api/parse-receipt`) — the Expo app posts images to that same route so the key never ships in the mobile bundle.
+OpenAI was picked over AWS Textract because Textract's free tier expires after three months; OpenAI stays free. The OpenAI key lives only on the Next.js server (`/api/parse-receipt`) — the Expo app posts images to that same route so the key never ships in the mobile bundle.
 
 ## Prereqs
 
 - Node 20+ and pnpm 10+
 - Xcode (for iOS simulator) or Expo Go on your phone
 - A [Firebase project](https://console.firebase.google.com/) (Spark plan is fine)
-- A [Mindee account](https://platform.mindee.com/) (free tier)
+- A [OpenAI account](https://platform.openai.com/) (free tier)
 
 ## First-time setup
 
@@ -47,7 +47,7 @@ pnpm build:shared
 
 # Web
 cp apps/web/.env.example apps/web/.env.local
-# …fill in MINDEE_API_KEY and NEXT_PUBLIC_FIREBASE_* values
+# …fill in OPENAI_API_KEY and NEXT_PUBLIC_FIREBASE_* values
 
 # Mobile
 cp apps/mobile/.env.example apps/mobile/.env.local
@@ -103,7 +103,7 @@ firebase emulators:start --only auth,firestore,storage
 ## Build order (MVP)
 
 1. ✅ Monorepo scaffold
-2. ✅ Receipt parse pipeline (Mindee v2, async)
+2. ✅ Receipt parse pipeline (OpenAI v2, async)
 3. ✅ Firebase Auth (Google for creators, anonymous for friends)
 4. ✅ Firestore write flow: parse → edit → save → share link
 5. ✅ `/b/[billId]` public claim page with live item totals and pay buttons

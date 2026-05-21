@@ -4,36 +4,14 @@ import type { ParsedReceipt } from "@owez/shared";
 /**
  * POST /api/parse-receipt
  *
- * Accepts a multipart upload (field "receipt") and parses it with the Mindee
- * V2 API. V2 is asynchronous-only: we enqueue the file, poll the job until
- * it finishes, then fetch the inference result. All of that happens inside
- * this single route handler so the client sees a normal synchronous request.
- *
- * Setup:
- *   1. Sign up at https://platform.mindee.com/
- *   2. Create/choose a receipt model — either the off-the-shelf "Expense
- *      Receipts" OTS model or a custom one — and copy its model_id (a UUID).
- *   3. Put the key + model_id in .env.local:
- *        MINDEE_API_KEY=...
- *        MINDEE_MODEL_ID=...
+ * Accepts a multipart upload (field "receipt") and parses it with OpenAI
+ * vision + structured JSON output.
  */
-
-const MINDEE_BASE = "https://api-v2.mindee.net/v2";
-const POLL_INTERVAL_MS = 1000;
-const POLL_TIMEOUT_MS = 60_000;
-
 export async function POST(req: Request) {
-  const apiKey = process.env.MINDEE_API_KEY;
-  const modelId = process.env.MINDEE_MODEL_ID;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "MINDEE_API_KEY not set. Copy .env.example to .env.local" },
-      { status: 500 },
-    );
-  }
-  if (!modelId) {
-    return NextResponse.json(
-      { error: "MINDEE_MODEL_ID not set. Grab it from platform.mindee.com" },
+      { error: "OPENAI_API_KEY not set. Copy .env.example to .env.local" },
       { status: 500 },
     );
   }
@@ -45,144 +23,137 @@ export async function POST(req: Request) {
   }
 
   try {
-    const jobId = await enqueue(file, modelId, apiKey);
-    const resultUrl = await pollJob(jobId, apiKey);
-    const inference = await fetchInference(resultUrl, apiKey);
-    return NextResponse.json(normalize(inference));
+    const parsed = await parseReceiptWithOpenAI(file, apiKey);
+    const { items: fixed, warning } = reconcileItems(
+      parsed.items,
+      parsed.subtotalCents,
+      parsed.taxCents,
+      parsed.tipCents,
+      parsed.totalCents,
+    );
+
+    const result: ParsedReceipt = {
+      merchant: parsed.merchant,
+      items: fixed,
+      subtotalCents: parsed.subtotalCents,
+      taxCents: parsed.taxCents,
+      tipCents: parsed.tipCents,
+      totalCents: parsed.totalCents,
+    };
+    if (warning) result.warning = warning;
+
+    return NextResponse.json(result);
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Mindee request failed";
+    const message = e instanceof Error ? e.message : "OpenAI request failed";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
 
-/** POST the file + model_id to /inferences/enqueue. Returns the job id. */
-async function enqueue(file: File, modelId: string, apiKey: string): Promise<string> {
-  const body = new FormData();
-  body.append("file", file, file.name || "receipt.jpg");
-  body.append("model_id", modelId);
+async function parseReceiptWithOpenAI(file: File, apiKey: string): Promise<ParsedReceipt> {
+  const dataUrl = await fileToDataUrl(file);
 
-  const res = await fetch(`${MINDEE_BASE}/inferences/enqueue`, {
+  const prompt = [
+    "Extract this receipt into JSON.",
+    "Return ONLY valid JSON with shape:",
+    '{"merchant":string,"items":[{"name":string,"price":number,"quantity":number}],"subtotal":number,"tax":number,"tip":number,"total":number}',
+    "Rules:",
+    "- price/subtotal/tax/tip/total are in major currency units (e.g. dollars), as numbers.",
+    "- quantity defaults to 1 when missing.",
+    "- Use 0 for missing totals.",
+    "- No markdown fences or extra text.",
+  ].join("\n");
+
+  const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
-    // V2 auth is the raw key in the Authorization header — NOT "Token <key>".
-    headers: { Authorization: apiKey },
-    body,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_RECEIPT_MODEL || "gpt-4.1-mini",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: prompt },
+            { type: "input_image", image_url: dataUrl },
+          ],
+        },
+      ],
+      max_output_tokens: 1200,
+    }),
   });
 
   if (!res.ok) {
-    throw new Error(`enqueue failed (${res.status}): ${await res.text()}`);
+    throw new Error(`openai parse failed (${res.status}): ${await res.text()}`);
   }
-  const json = (await res.json()) as { job?: { id?: string } };
-  const id = json.job?.id;
-  if (!id) throw new Error("enqueue response missing job.id");
-  return id;
+
+  const json = (await res.json()) as OpenAIResponse;
+  const text = extractText(json);
+  const payload = safeJsonParse(text);
+
+  const merchant = typeof payload.merchant === "string" ? payload.merchant : "";
+  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+
+  const items: ParsedReceipt["items"] = rawItems.map((it) => {
+    const qty = typeof it?.quantity === "number" && it.quantity > 0 ? it.quantity : 1;
+    return {
+      name: typeof it?.name === "string" && it.name.trim() ? it.name : "Item",
+      quantity: qty,
+      priceCents: toCents(typeof it?.price === "number" ? it.price : 0),
+    };
+  });
+
+  return {
+    merchant,
+    items,
+    subtotalCents: toCents(numberOrZero(payload.subtotal)),
+    taxCents: toCents(numberOrZero(payload.tax)),
+    tipCents: toCents(numberOrZero(payload.tip)),
+    totalCents: toCents(numberOrZero(payload.total)),
+  };
 }
 
-/**
- * Poll GET /jobs/{id} until the job resolves. When done, the endpoint returns
- * a 302 whose Location header points at the result URL — the exact path
- * varies by model type (e.g. /products/extraction/results/<id> for OTS
- * extraction models), so we just pass the full URL straight through to the
- * fetcher instead of trying to parse it.
- */
-async function pollJob(jobId: string, apiKey: string): Promise<string> {
-  const started = Date.now();
-  while (Date.now() - started < POLL_TIMEOUT_MS) {
-    const res = await fetch(`${MINDEE_BASE}/jobs/${jobId}`, {
-      headers: { Authorization: apiKey },
-      redirect: "manual",
-    });
+async function fileToDataUrl(file: File): Promise<string> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mime = file.type || "image/jpeg";
+  return `data:${mime};base64,${buffer.toString("base64")}`;
+}
 
-    if (res.status === 302 || res.status === 301) {
-      const location = res.headers.get("location");
-      if (!location) throw new Error("job redirect missing Location header");
-      return location;
-    }
+function extractText(response: OpenAIResponse): string {
+  const text = response.output_text?.trim();
+  if (text) return text;
 
-    if (res.ok) {
-      const body = (await res.json()) as {
-        job?: { status?: string; error?: unknown };
-      };
-      const status = body.job?.status;
-      if (status === "Failed") {
-        throw new Error(`Mindee job failed: ${JSON.stringify(body.job?.error)}`);
+  const chunks: string[] = [];
+  for (const item of response.output ?? []) {
+    for (const content of item.content ?? []) {
+      if (content.type === "output_text" && typeof content.text === "string") {
+        chunks.push(content.text);
       }
-      // "Waiting" / "Processing" → keep polling.
-    } else {
-      throw new Error(`poll failed (${res.status}): ${await res.text()}`);
     }
-
-    await sleep(POLL_INTERVAL_MS);
   }
-  throw new Error(`Mindee job did not finish within ${POLL_TIMEOUT_MS}ms`);
+  const joined = chunks.join("\n").trim();
+  if (!joined) throw new Error("OpenAI returned no text output");
+  return joined;
 }
 
-async function fetchInference(resultUrl: string, apiKey: string): Promise<MindeeInference> {
-  const res = await fetch(resultUrl, {
-    headers: { Authorization: apiKey },
-  });
-  if (!res.ok) {
-    throw new Error(`inference fetch failed (${res.status}): ${await res.text()}`);
+function safeJsonParse(value: string): Record<string, any> {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error("OpenAI did not return valid JSON");
   }
-  const json = (await res.json()) as { inference?: MindeeInference };
-  if (!json.inference) throw new Error("inference response missing .inference");
-  return json.inference;
 }
 
-/**
- * Map the v2 inference into our ParsedReceipt shape. Field names here match
- * the Mindee "Expense Receipts" extraction model (document_type =
- * expense_receipt). The important quirks:
- *   - line item price is `total_price` (not `total_amount`)
- *   - subtotal is `total_net` (pre-tax amount)
- *   - tip is `tips_gratuity`
- *   - there's a top-level `total_tax` scalar, so we don't have to sum the
- *     `taxes.items[].fields.amount` array ourselves
- */
-function normalize(inference: MindeeInference): ParsedReceipt {
-  const fields = inference.result?.fields ?? {};
-
-  const merchant = readString(fields["supplier_name"]);
-  const subtotalCents = toCents(readNumber(fields["total_net"]));
-  const totalCents = toCents(readNumber(fields["total_amount"]));
-  const tipCents = toCents(readNumber(fields["tips_gratuity"]));
-  const taxCents = toCents(readNumber(fields["total_tax"]));
-
-  const lineField = fields["line_items"];
-  const items: ParsedReceipt["items"] =
-    Array.isArray(lineField?.items)
-      ? lineField.items.map((li) => {
-          const inner = (li.fields ?? {}) as Record<string, MindeeField | undefined>;
-          const qty = readNumber(inner["quantity"]) ?? 1;
-          const totalPrice = readNumber(inner["total_price"]);
-          const unitPrice = readNumber(inner["unit_price"]);
-          // Mindee's total_price is the line total (qty × unit). We store
-          // per-unit price, so prefer unit_price when available, otherwise
-          // divide total_price by quantity to avoid double-counting.
-          const perUnit =
-            unitPrice ?? (totalPrice != null && qty > 1 ? totalPrice / qty : totalPrice);
-          return {
-            name: readString(inner["description"]) ?? "Item",
-            priceCents: toCents(perUnit),
-            quantity: qty,
-          };
-        })
-      : [];
-
-  const { items: fixed, warning } = reconcileItems(items, subtotalCents, taxCents, tipCents, totalCents);
-
-  const result: ParsedReceipt = { merchant, items: fixed, subtotalCents, taxCents, tipCents, totalCents };
-  if (warning) result.warning = warning;
-  return result;
+function numberOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-/**
- * Sanity-check the parsed items against the receipt's known totals.
- *
- * 1. If the item sum is ~2× the expected subtotal, prices are almost certainly
- *    line totals that got multiplied by quantity again — divide them out.
- * 2. After any correction, if the item sum still diverges from the expected
- *    subtotal by more than 5%, return a warning so the UI can flag it.
- */
+function toCents(value: number | null | undefined): number {
+  if (value == null || Number.isNaN(value)) return 0;
+  return Math.round(value * 100);
+}
+
 function reconcileItems(
   items: ParsedReceipt["items"],
   subtotalCents: number,
@@ -192,8 +163,6 @@ function reconcileItems(
 ): { items: ParsedReceipt["items"]; warning?: string } {
   if (items.length === 0) return { items };
 
-  // Pick the best reference total — prefer subtotal, fall back to
-  // total minus tax/tip.
   const expected =
     subtotalCents > 0
       ? subtotalCents
@@ -203,14 +172,11 @@ function reconcileItems(
 
   const computedSum = items.reduce((s, it) => s + it.priceCents * it.quantity, 0);
 
-  // No reference total to compare against — can't verify.
   if (expected <= 0) {
     return { items, warning: "Couldn't verify item prices — no subtotal on receipt." };
   }
   if (computedSum <= 0) return { items };
 
-  // If computed total is roughly double (within 10% tolerance of 2×), the
-  // prices are almost certainly line totals that got multiplied again.
   const ratio = computedSum / expected;
   let corrected = items;
   let didCorrect = false;
@@ -223,7 +189,6 @@ function reconcileItems(
     didCorrect = true;
   }
 
-  // Check if the (possibly corrected) sum matches the expected total.
   const finalSum = corrected.reduce((s, it) => s + it.priceCents * it.quantity, 0);
   const drift = Math.abs(finalSum - expected) / expected;
 
@@ -239,38 +204,9 @@ function reconcileItems(
   return { items };
 }
 
-/* ---------- helpers ---------- */
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function toCents(value: number | null | undefined): number {
-  if (value == null || Number.isNaN(value)) return 0;
-  return Math.round(value * 100);
-}
-
-function readNumber(field: MindeeField | undefined): number | undefined {
-  if (!field) return undefined;
-  const v = field.value;
-  return typeof v === "number" ? v : undefined;
-}
-
-function readString(field: MindeeField | undefined): string | undefined {
-  if (!field) return undefined;
-  const v = field.value;
-  return typeof v === "string" ? v : undefined;
-}
-
-/* ---------- minimal v2 response typings ---------- */
-
-interface MindeeField {
-  value?: string | number | null;
-  items?: Array<MindeeField & { fields?: Record<string, MindeeField> }>;
-}
-
-interface MindeeInference {
-  result?: {
-    fields?: Record<string, MindeeField>;
-  };
+interface OpenAIResponse {
+  output_text?: string;
+  output?: Array<{
+    content?: Array<{ type?: string; text?: string }>;
+  }>;
 }
