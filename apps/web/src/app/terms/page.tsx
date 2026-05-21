@@ -26,7 +26,7 @@ export default function TermsPage() {
           Receipt parsing is not guaranteed
         </h2>
         <p>
-          Owez uses a third-party receipt-parsing service (Mindee) to read
+          Owez uses a third-party receipt-parsing service (OpenAI) to read
           your receipts. It is very good, but it is not perfect. You should
           always review the parsed line items, prices, tax, and tip before
           sharing a receipt.{" "}
