@@ -180,23 +180,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   if (error) return <AuthErrorScreen message={error} />;
-  if (loading) return <AuthLoadingScreen />;
+  if (loading) return null;
 
   return <AuthContext value={value}>{children}</AuthContext>;
-}
-
-/** Branded full-screen spinner shown while Firebase auth initializes. */
-function AuthLoadingScreen() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
-      <span
-        className="h-8 w-8 animate-spin rounded-full border-2 border-[color:var(--border)] border-t-[color:var(--color-accent)]"
-        role="status"
-        aria-label="Loading"
-      />
-      <p className="font-display text-lg">Loading Owez…</p>
-    </main>
-  );
 }
 
 /** Shown when auth init fails or times out, so the app never hangs blank. */
