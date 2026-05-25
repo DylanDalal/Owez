@@ -76,7 +76,7 @@ export function SplitEvenlyModal({
 
             {autoAssign && (
               <p className="text-xs text-[color:var(--muted)] mb-4">
-                This will create claims for all trip members with an equal split of each item.
+                This will create claims for all tab members with an equal split of each item.
               </p>
             )}
 

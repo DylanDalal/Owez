@@ -25,18 +25,18 @@ All three consume `@owez/shared` so the bill data model lives in exactly one pla
 |---|---|
 | Web + PWA | Next.js 15, Tailwind 4, deployed on Vercel |
 | iOS app | Expo SDK 52, expo-router |
-| OCR | [Mindee Receipt API](https://platform.mindee.com/) — 250 pages/mo free forever |
+| Receipt parsing | [OpenAI Responses API](https://platform.openai.com/) — vision model (`gpt-4o-mini` by default) with a strict JSON schema |
 | Auth / DB | Firebase Spark plan (Auth + Firestore only — Storage is Blaze-only, so we skip saving receipt images) |
 | Payments | Deep links only — no processing (`venmo://`, `cash.app/$tag`, `sms:` for Zelle) |
 
-Mindee was picked over AWS Textract because Textract's free tier expires after three months; Mindee stays free. The Mindee key lives only on the Next.js server (`/api/parse-receipt`) — the Expo app posts images to that same route so the key never ships in the mobile bundle.
+Receipts are parsed by sending the image to a vision-capable OpenAI model constrained by a JSON schema, so the response maps directly onto `ParsedReceipt`. The `OPENAI_API_KEY` lives only on the Next.js server (`/api/parse-receipt`) — the Expo app posts images to that same route so the key never ships in the mobile bundle.
 
 ## Prereqs
 
 - Node 20+ and pnpm 10+
 - Xcode (for iOS simulator) or Expo Go on your phone
 - A [Firebase project](https://console.firebase.google.com/) (Spark plan is fine)
-- A [Mindee account](https://platform.mindee.com/) (free tier)
+- An [OpenAI API key](https://platform.openai.com/api-keys)
 
 ## First-time setup
 
@@ -47,7 +47,7 @@ pnpm build:shared
 
 # Web
 cp apps/web/.env.example apps/web/.env.local
-# …fill in MINDEE_API_KEY and NEXT_PUBLIC_FIREBASE_* values
+# …fill in OPENAI_API_KEY and NEXT_PUBLIC_FIREBASE_* values
 
 # Mobile
 cp apps/mobile/.env.example apps/mobile/.env.local
@@ -103,7 +103,7 @@ firebase emulators:start --only auth,firestore,storage
 ## Build order (MVP)
 
 1. ✅ Monorepo scaffold
-2. ✅ Receipt parse pipeline (Mindee v2, async)
+2. ✅ Receipt parse pipeline (OpenAI vision + JSON schema)
 3. ✅ Firebase Auth (Google for creators, anonymous for friends)
 4. ✅ Firestore write flow: parse → edit → save → share link
 5. ✅ `/b/[billId]` public claim page with live item totals and pay buttons
@@ -121,7 +121,7 @@ One-time steps in the [Firebase Console](https://console.firebase.google.com/) b
    - Anonymous → for friends claiming items (the `/b/[billId]` page calls `signInAnonymously` on load)
 3. **Firestore Database** → Create database → production mode → any region. Rules deploy from `firestore.rules`.
 4. **Project settings → General → Your apps → Add Web app** → copy the config into `apps/web/.env.local`.
-5. Deploy rules: `firebase deploy --only firestore:rules` (or use the emulators for local dev).
+5. Deploy rules and indexes: `firebase deploy --only firestore:rules,firestore:indexes` (or use the emulators for local dev).
 
 > No Firebase Storage step — it's Blaze-only, so Owez skips receipt-image upload entirely. Friends only see the parsed line items, not the original photo.
 

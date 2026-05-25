@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   collectionGroup,
   deleteDoc,
@@ -21,8 +22,8 @@ import {
   type BillId,
   type Claim,
   type ClaimId,
-  type Trip,
-  type TripMember,
+  type Tab,
+  type TabMember,
 } from "@owez/shared";
 import { getFirebase } from "./firebase";
 
@@ -196,87 +197,106 @@ export async function deleteClaimDoc(
   await deleteDoc(doc(db, "bills", billId, "claims", claimId));
 }
 
-/* ---------- Trip functions ---------- */
+/* ---------- Tab functions ---------- */
 
-/** Write a new trip doc. The caller must be signed in with a real user. */
-export async function createTrip(trip: Trip): Promise<void> {
+/** Write a new tab doc. The caller must be signed in with a real user. */
+export async function createTab(tab: Tab): Promise<void> {
   const { db } = getFirebase();
-  await setDoc(doc(db, "trips", trip.id), trip);
+  await setDoc(doc(db, "tabs", tab.id), tab);
 }
 
-/** Update an existing trip (creator only, enforced by rules). */
-export async function updateTrip(trip: Trip): Promise<void> {
+/** Update an existing tab (creator only, enforced by rules). */
+export async function updateTab(tab: Tab): Promise<void> {
   const { db } = getFirebase();
-  await setDoc(doc(db, "trips", trip.id), trip);
+  await setDoc(doc(db, "tabs", tab.id), tab);
 }
 
-/** Delete a trip doc (creator only, enforced by rules). */
-export async function deleteTrip(tripId: string): Promise<void> {
+/**
+ * Add a member to a tab if they're not already on it. Idempotent — safe to
+ * call on every claim. Returns the updated member list (or the existing one
+ * if no change was needed) so callers can keep local state in sync.
+ *
+ * Uses arrayUnion so concurrent claimers don't clobber each other's writes.
+ * Security rules allow any signed-in member to append themselves.
+ */
+export async function addMemberToTab(
+  tabId: string,
+  member: TabMember,
+): Promise<void> {
   const { db } = getFirebase();
-  await deleteDoc(doc(db, "trips", tripId));
+  await updateDoc(doc(db, "tabs", tabId), {
+    members: arrayUnion(member),
+    updatedAt: Date.now(),
+  });
 }
 
-/** Subscribe to a trip doc. Returns an unsubscribe function. */
-export function subscribeToTrip(
-  tripId: string,
-  onChange: (trip: Trip | null) => void,
+/** Delete a tab doc (creator only, enforced by rules). */
+export async function deleteTab(tabId: string): Promise<void> {
+  const { db } = getFirebase();
+  await deleteDoc(doc(db, "tabs", tabId));
+}
+
+/** Subscribe to a tab doc. Returns an unsubscribe function. */
+export function subscribeToTab(
+  tabId: string,
+  onChange: (tab: Tab | null) => void,
 ): Unsubscribe {
   const { db } = getFirebase();
-  return onSnapshot(doc(db, "trips", tripId), (snap) => {
+  return onSnapshot(doc(db, "tabs", tabId), (snap) => {
     if (!snap.exists()) {
       onChange(null);
       return;
     }
-    onChange(tripFromFirestore(snap.data()));
+    onChange(tabFromFirestore(snap.data()));
   });
 }
 
 /**
- * Subscribe to every trip the given user has created, newest first.
+ * Subscribe to every tab the given user has created, newest first.
  */
-export function subscribeToMyTrips(
+export function subscribeToMyTabs(
   creatorId: string,
-  onChange: (trips: Trip[]) => void,
+  onChange: (tabs: Tab[]) => void,
   onError?: (err: Error) => void,
 ): Unsubscribe {
   const { db } = getFirebase();
   const q = query(
-    collection(db, "trips"),
+    collection(db, "tabs"),
     where("creatorId", "==", creatorId),
     orderBy("createdAt", "desc"),
   );
   return onSnapshot(
     q,
     (snap) => {
-      const trips: Trip[] = [];
-      snap.forEach((d) => trips.push(tripFromFirestore(d.data())));
-      onChange(trips);
+      const tabs: Tab[] = [];
+      snap.forEach((d) => tabs.push(tabFromFirestore(d.data())));
+      onChange(tabs);
     },
     (err) => onError?.(err),
   );
 }
 
-/** Fetch all bills in a trip. */
-export async function getBillsInTrip(tripId: string): Promise<Bill[]> {
+/** Fetch all bills on a tab. */
+export async function getBillsInTab(tabId: string): Promise<Bill[]> {
   const { db } = getFirebase();
   const q = query(
     collection(db, "bills"),
-    where("tripId", "==", tripId),
+    where("tabId", "==", tabId),
     orderBy("createdAt", "asc"),
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => fromFirestore(d.data()));
 }
 
-/** Subscribe to all bills in a trip, ordered by creation date. */
-export function subscribeToBillsInTrip(
-  tripId: string,
+/** Subscribe to all bills on a tab, ordered by creation date. */
+export function subscribeToBillsInTab(
+  tabId: string,
   onChange: (bills: Bill[]) => void,
 ): Unsubscribe {
   const { db } = getFirebase();
   const q = query(
     collection(db, "bills"),
-    where("tripId", "==", tripId),
+    where("tabId", "==", tabId),
     orderBy("createdAt", "asc"),
   );
   return onSnapshot(q, (snap) => {
@@ -286,12 +306,12 @@ export function subscribeToBillsInTrip(
 }
 
 /**
- * Fetch all claims across all bills in a trip.
+ * Fetch all claims across all bills on a tab.
  * Used for settlement calculation.
  */
-export async function getClaimsInTrip(tripId: string): Promise<Claim[]> {
+export async function getClaimsInTab(tabId: string): Promise<Claim[]> {
   const { db } = getFirebase();
-  const bills = await getBillsInTrip(tripId);
+  const bills = await getBillsInTab(tabId);
   const allClaims: Claim[] = [];
 
   for (const bill of bills) {
@@ -305,67 +325,55 @@ export async function getClaimsInTrip(tripId: string): Promise<Claim[]> {
 }
 
 /**
- * Calculate settlement amounts for a trip: who owes whom across all receipts.
- * For each pair of users, calculates net settlement as:
- * (what they owe for bills I created) - (what I owe for bills they created)
- * Returns a map of userId → {owesYou, youOwe} from the current user's perspective.
+ * Calculate settlement amounts for a tab: who owes whom across all receipts.
+ * For each member, nets what they owe for bills the current user created
+ * against what the current user owes for bills that member created.
+ * Returns a map of userId → {owesYou, youOwe} from the current user's view.
+ *
+ * Claims are matched to their bill by item membership: a claim belongs to a
+ * bill when the bill contains an item with the claim's itemId. Item ids are
+ * unique across bills (makeId), so this is unambiguous.
  */
-export function tripSettlement(
-  trip: Trip,
+export function tabSettlement(
+  tab: Tab,
   bills: Bill[],
   claims: Claim[],
   currentUserId: string,
 ): Record<string, { owesYou: number; youOwe: number }> {
   const settlement: Record<string, { owesYou: number; youOwe: number }> = {};
 
-  // Initialize settlement for all trip members
-  for (const member of trip.members) {
+  // Initialize settlement for all tab members
+  for (const member of tab.members) {
     if (member.userId !== currentUserId) {
       settlement[member.userId] = { owesYou: 0, youOwe: 0 };
     }
   }
 
-  // Create a map of billId -> claims for faster lookup
-  const claimsByBill = new Map<string, Claim[]>();
-  for (const claim of claims) {
-    if (!claimsByBill.has(claim.itemId)) {
-      claimsByBill.set(claim.itemId, []);
-    }
-    claimsByBill.get(claim.itemId)?.push(claim);
-  }
-
-  // For each pair of users, calculate settlement
-  for (const member of trip.members) {
+  for (const member of tab.members) {
     if (member.userId === currentUserId) continue;
+    const entry = settlement[member.userId];
+    if (!entry) continue;
 
-    // For each bill I created: sum what they owe me
     for (const bill of bills) {
+      const billClaims = claims.filter((c) =>
+        bill.items.some((item) => item.id === c.itemId)
+      );
+
+      // Bills I created: sum what this member owes me.
       if (bill.creatorId === currentUserId) {
-        // Get all claims on this bill
-        const billClaims = claims.filter((c) =>
-          bill.items.some((item) => item.id === c.itemId)
-        );
-        const theirAmount = claimerOwes(bill, billClaims, member.userId);
-        settlement[member.userId].owesYou += theirAmount.totalCents;
+        entry.owesYou += claimerOwes(bill, billClaims, member.userId).totalCents;
       }
-    }
-
-    // For each bill they created: sum what I owe them
-    for (const bill of bills) {
+      // Bills they created: sum what I owe them.
       if (bill.creatorId === member.userId) {
-        // Get all claims on this bill
-        const billClaims = claims.filter((c) =>
-          bill.items.some((item) => item.id === c.itemId)
-        );
-        const myAmount = claimerOwes(bill, billClaims, currentUserId);
-        settlement[member.userId].youOwe += myAmount.totalCents;
+        entry.youOwe += claimerOwes(bill, billClaims, currentUserId).totalCents;
       }
     }
   }
 
   // Remove zero balances
   for (const userId of Object.keys(settlement)) {
-    if (settlement[userId].owesYou === 0 && settlement[userId].youOwe === 0) {
+    const entry = settlement[userId];
+    if (entry && entry.owesYou === 0 && entry.youOwe === 0) {
       delete settlement[userId];
     }
   }
@@ -401,11 +409,11 @@ function fromFirestore(data: Record<string, unknown>): Bill {
     totalCents: Number(data.totalCents ?? 0),
     paymentMethods:
       (data.paymentMethods as Bill["paymentMethods"] | undefined) ?? {},
-    tripId: typeof data.tripId === "string" ? data.tripId : undefined,
+    tabId: typeof data.tabId === "string" ? data.tabId : undefined,
   };
 }
 
-function tripFromFirestore(data: Record<string, unknown>): Trip {
+function tabFromFirestore(data: Record<string, unknown>): Tab {
   const createdAt =
     data.createdAt instanceof Timestamp
       ? data.createdAt.toMillis()
@@ -434,7 +442,7 @@ function tripFromFirestore(data: Record<string, unknown>): Trip {
     description:
       typeof data.description === "string" ? data.description : undefined,
     members: Array.isArray(data.members)
-      ? (data.members as TripMember[])
+      ? (data.members as TabMember[])
       : [],
     receiptIds: Array.isArray(data.receiptIds)
       ? data.receiptIds.map((x) => String(x))

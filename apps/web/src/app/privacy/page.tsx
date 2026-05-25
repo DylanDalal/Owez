@@ -62,9 +62,10 @@ export default function PrivacyPage() {
             <strong>Firebase</strong> (Google): authentication and database.
           </li>
           <li>
-            <strong>Mindee</strong>: reads the receipt you upload and returns
+            <strong>OpenAI</strong>: reads the receipt you upload and returns
             structured line items. We send them the photo of the receipt;
-            they don't retain it once we fetch the parse result.
+            per their API data policy, inputs aren't used to train their
+            models and are retained only briefly for abuse monitoring.
           </li>
         </ul>
 

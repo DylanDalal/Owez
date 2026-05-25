@@ -7,17 +7,16 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SignInGate } from "@/components/SignInGate";
 import { useAuth } from "@/lib/auth";
-import { createBill, createTrip, makeId, newBillId } from "@/lib/bills";
+import { createBill, createTab, makeId, newBillId } from "@/lib/bills";
 import { upsertProfile } from "@/lib/profiles";
-import { CentsInput } from "@/components/CentsInput";
 import { centsToDisplay } from "@/lib/format";
 
 type Stage = "details" | "parsing" | "saving";
 
-export default function NewTripPage() {
+export default function NewTabPage() {
   return (
     <SignInGate>
-      <NewTripInner />
+      <NewTabInner />
     </SignInGate>
   );
 }
@@ -27,7 +26,7 @@ interface ParsedReceiptWithFile {
   parsed: ParsedReceipt;
 }
 
-function NewTripInner() {
+function NewTabInner() {
   const { user, profile } = useAuth();
   const router = useRouter();
   const libraryRef = useRef<HTMLInputElement | null>(null);
@@ -35,13 +34,14 @@ function NewTripInner() {
   const [stage, setStage] = useState<Stage>("details");
   const [error, setError] = useState<string | null>(null);
 
-  // Trip state
-  const [tripTitle, setTripTitle] = useState("");
-  const [tripDescription, setTripDescription] = useState("");
+  // Tab state
+  const [tabTitle, setTabTitle] = useState("");
+  const [tabDescription, setTabDescription] = useState("");
   const [receipts, setReceipts] = useState<ParsedReceiptWithFile[]>([]);
   const [parsingProgress, setParsingProgress] = useState(0);
+  const [parsingTotal, setParsingTotal] = useState(0);
 
-  // Payment methods (shared across all receipts in trip)
+  // Payment methods (shared across all receipts on the tab)
   const [venmo, setVenmo] = useState("");
   const [cashapp, setCashapp] = useState("");
   const [zellePhone, setZellePhone] = useState("");
@@ -57,19 +57,17 @@ function NewTripInner() {
 
   async function handleFilesSelected(files: FileList) {
     setError(null);
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+
     setStage("parsing");
     setParsingProgress(0);
-    setReceipts([]);
-
-    const fileArray = Array.from(files);
+    setParsingTotal(fileArray.length);
 
     try {
       const parsed: ParsedReceiptWithFile[] = [];
 
-      for (let i = 0; i < fileArray.length; i++) {
-        const file = fileArray[i];
-        setParsingProgress(i);
-
+      for (const file of fileArray) {
         const fd = new FormData();
         fd.append("receipt", file);
         const res = await fetch("/api/parse-receipt", {
@@ -80,10 +78,11 @@ function NewTripInner() {
 
         const parsedReceipt = (await res.json()) as ParsedReceipt;
         parsed.push({ file, parsed: parsedReceipt });
+        setParsingProgress((n) => n + 1);
       }
 
-      setParsingProgress(fileArray.length);
-      setReceipts(parsed);
+      // Append to anything already added so "+ Add more photos" accumulates.
+      setReceipts((prev) => [...prev, ...parsed]);
       setStage("details");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to parse receipts");
@@ -92,10 +91,7 @@ function NewTripInner() {
   }
 
   const hasPayment = !!(venmo.trim() || cashapp.trim() || zellePhone.trim());
-  const canSave =
-    tripTitle.trim() &&
-    receipts.length > 0 &&
-    hasPayment;
+  const canSave = !!tabTitle.trim() && receipts.length > 0 && hasPayment;
 
   async function save() {
     if (!user) return;
@@ -115,7 +111,7 @@ function NewTripInner() {
         });
       }
 
-      const tripId = newBillId();
+      const tabId = newBillId();
       const billIds: string[] = [];
       const paymentMethods = {
         venmo: venmo.trim() ? venmo.trim().replace(/^@/, "") : undefined,
@@ -145,7 +141,7 @@ function NewTripInner() {
           tipCents: receipt.parsed.tipCents,
           totalCents: receipt.parsed.totalCents,
           paymentMethods,
-          tripId, // Link to trip
+          tabId, // Link to the tab
           title: receipt.parsed.merchant,
         };
 
@@ -155,15 +151,15 @@ function NewTripInner() {
         await createBill(bill);
       }
 
-      // Create trip document
-      const trip = {
-        id: tripId,
+      // Create tab document
+      const tab = {
+        id: tabId,
         creatorId: user.uid,
         creatorName: user.displayName ?? profile?.displayName ?? undefined,
         creatorPhotoURL: user.photoURL ?? profile?.photoURL ?? undefined,
         createdAt: Date.now(),
-        title: tripTitle.trim(),
-        description: tripDescription.trim() || undefined,
+        title: tabTitle.trim(),
+        description: tabDescription.trim() || undefined,
         members: [
           {
             userId: user.uid,
@@ -176,13 +172,13 @@ function NewTripInner() {
         status: "active" as const,
       };
 
-      if (!trip.creatorName) delete trip.creatorName;
-      if (!trip.creatorPhotoURL) delete trip.creatorPhotoURL;
+      if (!tab.creatorName) delete tab.creatorName;
+      if (!tab.creatorPhotoURL) delete tab.creatorPhotoURL;
 
-      await createTrip(trip);
-      router.replace(`/trip/${tripId}?owner=1`);
+      await createTab(tab);
+      router.replace(`/tab/${tabId}?owner=1`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save trip");
+      setError(e instanceof Error ? e.message : "Failed to save tab");
       setStage("details");
     }
   }
@@ -191,16 +187,20 @@ function NewTripInner() {
     <main>
       <Header />
       <section className="mx-auto max-w-xl px-4 py-10">
-        <h1 className="font-display text-3xl font-bold">New trip</h1>
+        <h1 className="font-display text-3xl font-bold">New tab</h1>
+        <p className="mt-2 text-sm text-[color:var(--muted)]">
+          Group a night out or a whole trip — add every receipt you paid for
+          and your friends settle up once.
+        </p>
 
-        {stage === "details" && (
+        {(stage === "details" || stage === "saving") && (
           <div className="mt-6 space-y-5">
             <label className="block">
-              <span className="text-sm font-medium">Trip name</span>
+              <span className="text-sm font-medium">Tab name</span>
               <input
-                value={tripTitle}
-                onChange={(e) => setTripTitle(e.target.value)}
-                placeholder="Vegas 2024"
+                value={tabTitle}
+                onChange={(e) => setTabTitle(e.target.value)}
+                placeholder="Friday night out"
                 className="mt-1"
               />
             </label>
@@ -208,9 +208,9 @@ function NewTripInner() {
             <label className="block">
               <span className="text-sm font-medium">Description (optional)</span>
               <textarea
-                value={tripDescription}
-                onChange={(e) => setTripDescription(e.target.value)}
-                placeholder="Spring break trip with friends..."
+                value={tabDescription}
+                onChange={(e) => setTabDescription(e.target.value)}
+                placeholder="Drinks, dinner, and the cab home..."
                 className="mt-1 min-h-20"
               />
             </label>
@@ -225,21 +225,23 @@ function NewTripInner() {
                 )}
               </div>
 
-              {receipts.length === 0 && (
+              <input
+                ref={libraryRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) handleFilesSelected(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+
+              {receipts.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-sm text-[color:var(--muted)]">
                     Snap photos of your receipts and we'll read every line item.
                   </p>
-                  <input
-                    ref={libraryRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files) handleFilesSelected(e.target.files);
-                    }}
-                  />
                   <button
                     type="button"
                     onClick={() => libraryRef.current?.click()}
@@ -248,9 +250,7 @@ function NewTripInner() {
                     Choose Photos
                   </button>
                 </div>
-              )}
-
-              {receipts.length > 0 && (
+              ) : (
                 <div className="space-y-3">
                   {receipts.map((r, i) => (
                     <div
@@ -262,7 +262,8 @@ function NewTripInner() {
                           {r.parsed.merchant || `Receipt ${i + 1}`}
                         </div>
                         <div className="text-xs text-[color:var(--muted)]">
-                          {r.parsed.items.length} item{r.parsed.items.length === 1 ? "" : "s"} ·{" "}
+                          {r.parsed.items.length} item
+                          {r.parsed.items.length === 1 ? "" : "s"} ·{" "}
                           {centsToDisplay(r.parsed.totalCents)}
                         </div>
                       </div>
@@ -270,7 +271,9 @@ function NewTripInner() {
                         type="button"
                         className="btn btn-ghost !px-2"
                         onClick={() =>
-                          setReceipts((prev) => prev.filter((_, idx) => idx !== i))
+                          setReceipts((prev) =>
+                            prev.filter((_, idx) => idx !== i),
+                          )
                         }
                       >
                         ×
@@ -290,7 +293,8 @@ function NewTripInner() {
 
             <div className="card p-4 text-sm border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/5">
               <div className="text-sm">
-                <strong>Only upload receipts that you paid for</strong> — your friends will be able to add items when you send them the link.
+                <strong>Only upload receipts that you paid for</strong> — your
+                friends will be able to add items when you send them the link.
               </div>
             </div>
 
@@ -299,8 +303,8 @@ function NewTripInner() {
                 How friends pay you
               </h2>
               <p className="text-xs text-[color:var(--muted)]">
-                Pulled from your account. Fill in any blanks and we'll save
-                them for next time.
+                Pulled from your account. Fill in any blanks and we'll save them
+                for next time.
               </p>
               <label className="block">
                 <span className="text-sm">Venmo</span>
@@ -341,7 +345,7 @@ function NewTripInner() {
               disabled={!canSave || stage === "saving"}
               className="btn btn-primary w-full"
             >
-              {stage === "saving" ? "Creating trip…" : "Create & get share link"}
+              {stage === "saving" ? "Creating tab…" : "Create & get share link"}
             </button>
           </div>
         )}
@@ -350,15 +354,16 @@ function NewTripInner() {
           <div className="mt-6 card p-8 text-center">
             <p className="font-display text-xl">Reading your receipts…</p>
             <p className="mt-2 text-sm text-[color:var(--muted)]">
-              Processing {parsingProgress} of {Math.max(parsingProgress, receipts.length || 1)}
+              Processing {Math.min(parsingProgress + 1, parsingTotal)} of{" "}
+              {parsingTotal}
             </p>
             <div className="mt-4 w-full bg-[color:var(--border)] rounded-full h-2 overflow-hidden">
               <div
                 className="bg-[color:var(--color-accent)] h-full transition-all duration-300"
                 style={{
                   width: `${
-                    receipts.length > 0
-                      ? (parsingProgress / receipts.length) * 100
+                    parsingTotal > 0
+                      ? (parsingProgress / parsingTotal) * 100
                       : 0
                   }%`,
                 }}

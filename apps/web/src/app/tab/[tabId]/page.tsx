@@ -2,47 +2,43 @@
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Bill, Claim, Trip } from "@owez/shared";
-import {
-  buildPayLinks,
-  claimerOwes,
-  groupClaimsByUnit,
-  initialsFromName,
-  unitsForItem,
-} from "@owez/shared";
+import type { Bill, Claim, Tab } from "@owez/shared";
+import { buildPayLinks, initialsFromName, unitsForItem } from "@owez/shared";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ReceiptItemCard } from "@/components/ReceiptItemCard";
 import { ItemDetailSheet } from "@/components/ItemDetailSheet";
 import { useAuth } from "@/lib/auth";
 import {
+  addMemberToTab,
   claimItemUnit,
   deleteClaimDoc,
   updateClaimDoc,
-  subscribeToTrip,
-  subscribeToBillsInTrip,
+  subscribeToTab,
+  subscribeToBillsInTab,
   subscribeToClaims,
-  getClaimsOnce,
-  tripSettlement,
+  tabSettlement,
 } from "@/lib/bills";
 import { centsToDisplay } from "@/lib/format";
 import { SplitEvenlyModal } from "@/components/SplitEvenlyModal";
 
-export default function PublicTripPage({
+export default function PublicTabPage({
   params,
 }: {
-  params: Promise<{ tripId: string }>;
+  params: Promise<{ tabId: string }>;
 }) {
-  const { tripId } = use(params);
+  const { tabId } = use(params);
   const search = useSearchParams();
   const router = useRouter();
   const isOwnerView = search.get("owner") === "1";
 
   const { user, profile, signInAnon } = useAuth();
 
-  const [trip, setTrip] = useState<Trip | null | undefined>(undefined);
+  const [tab, setTab] = useState<Tab | null | undefined>(undefined);
   const [bills, setBills] = useState<Bill[]>([]);
-  const [claimsByBill, setClaimsByBill] = useState<Map<string, Claim[]>>(new Map());
+  const [claimsByBill, setClaimsByBill] = useState<Map<string, Claim[]>>(
+    new Map(),
+  );
   const [myName, setMyName] = useState("");
   const [detail, setDetail] = useState<{
     billId: string;
@@ -62,19 +58,19 @@ export default function PublicTripPage({
 
   useEffect(() => {
     if (user?.isAnonymous && !isOwnerView) {
-      router.replace(`/trip/${tripId}`);
+      router.replace(`/tab/${tabId}`);
     }
-  }, [user, isOwnerView, tripId, router]);
+  }, [user, isOwnerView, tabId, router]);
 
-  // Subscribe to trip and bills
+  // Subscribe to tab and its bills
   useEffect(() => {
-    const u1 = subscribeToTrip(tripId, setTrip);
-    const u2 = subscribeToBillsInTrip(tripId, setBills);
+    const u1 = subscribeToTab(tabId, setTab);
+    const u2 = subscribeToBillsInTab(tabId, setBills);
     return () => {
       u1();
       u2();
     };
-  }, [tripId]);
+  }, [tabId]);
 
   // Subscribe to claims for all bills
   useEffect(() => {
@@ -90,7 +86,7 @@ export default function PublicTripPage({
           next.set(bill.id, claims);
           return next;
         });
-      })
+      }),
     );
 
     return () => unsubscribes.forEach((u) => u());
@@ -107,16 +103,6 @@ export default function PublicTripPage({
     if (profile?.displayName && !myName) setMyName(profile.displayName);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.displayName]);
-
-  // Ensure user is added to trip members on first claim
-  useEffect(() => {
-    if (!trip || !user || !myName.trim()) return;
-    const isMember = trip.members.some((m) => m.userId === user.uid);
-    if (!isMember && allClaims.some((c) => c.claimerId === user.uid)) {
-      // User is a member if they have claims
-      return;
-    }
-  }, [trip, user, allClaims, myName]);
 
   function saveMyName(name: string) {
     setMyName(name);
@@ -154,27 +140,39 @@ export default function PublicTripPage({
   }, [claimsByBill]);
 
   const mySettlement = useMemo(() => {
-    if (!trip || !user) return null;
-    return tripSettlement(trip, bills, allClaims, user.uid);
-  }, [trip, bills, allClaims, user]);
+    if (!tab || !user) return null;
+    return tabSettlement(tab, bills, allClaims, user.uid);
+  }, [tab, bills, allClaims, user]);
 
   const hasClaims = !!user && allClaims.some((c) => c.claimerId === user.uid);
 
+  /**
+   * Persist the current viewer onto the tab's member list so they show up in
+   * everyone's settlement. arrayUnion makes this idempotent and concurrency
+   * safe — see addMemberToTab.
+   */
+  async function ensureMember() {
+    if (!tab || !user || !myName.trim()) return;
+    if (tab.members.some((m) => m.userId === user.uid)) return;
+    try {
+      await addMemberToTab(tab.id, {
+        userId: user.uid,
+        name: myName.trim(),
+        photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
+        joinedAt: Date.now(),
+      });
+    } catch {
+      // Non-fatal: the claim still landed; settlement will pick them up once
+      // the membership write succeeds on a later claim.
+    }
+  }
+
   async function quickClaim(billId: string, itemId: string, unitIndex: number) {
-    if (!trip || !user) return;
+    if (!tab || !user) return;
     if (!myName.trim()) {
       focusName();
       return;
     }
-
-    const bill = bills.find((b) => b.id === billId);
-    if (!bill) return;
-
-    const billClaims = allClaims.filter(
-      (c) =>
-        bills.find((b) => b.id === billId)?.id &&
-        c.itemId === itemId
-    );
 
     try {
       await claimItemUnit(billId, {
@@ -187,17 +185,7 @@ export default function PublicTripPage({
         initials: initialsFromName(myName),
         photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
       });
-
-      // Add user to trip members if not already there
-      if (!trip.members.find((m) => m.userId === user.uid)) {
-        trip.members.push({
-          userId: user.uid,
-          name: myName.trim(),
-          photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
-          joinedAt: Date.now(),
-        });
-        // Update trip (this should be done via a function, but for now we update locally)
-      }
+      await ensureMember();
     } catch (e) {
       flashToast(e instanceof Error ? e.message : "Could not claim", 2600);
     }
@@ -210,9 +198,9 @@ export default function PublicTripPage({
       portions: number;
       splitInto: number;
       duplicate?: boolean;
-    }
+    },
   ) {
-    if (!trip || !user || !detail) return;
+    if (!tab || !user || !detail) return;
     if (!myName.trim()) {
       focusName();
       throw new Error("Enter your name first");
@@ -225,7 +213,7 @@ export default function PublicTripPage({
             c.itemId === detail.itemId &&
             c.unitIndex === args.unitIndex &&
             c.claimerId === user.uid &&
-            !c.duplicate
+            !c.duplicate,
         );
 
     try {
@@ -247,16 +235,7 @@ export default function PublicTripPage({
           duplicate: args.duplicate,
         });
       }
-
-      // Add user to trip members if not already there
-      if (!trip.members.find((m) => m.userId === user.uid)) {
-        trip.members.push({
-          userId: user.uid,
-          name: myName.trim(),
-          photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
-          joinedAt: Date.now(),
-        });
-      }
+      await ensureMember();
     } catch (e) {
       flashToast(e instanceof Error ? e.message : "Could not claim", 2600);
       throw e;
@@ -271,24 +250,28 @@ export default function PublicTripPage({
     }
   }
 
-  async function applySplitEvenly(billId: string, splitCount: number, autoAssign: boolean) {
-    if (!trip || !user || !myName.trim()) return;
+  async function applySplitEvenly(
+    billId: string,
+    splitCount: number,
+    autoAssign: boolean,
+  ) {
+    if (!tab || !user || !myName.trim()) return;
 
     const bill = bills.find((b) => b.id === billId);
     if (!bill) return;
+    const billClaims = claimsByBill.get(billId) ?? [];
 
     try {
-      if (autoAssign && trip.members.length > 0) {
-        // Auto-assign to all trip members
-        for (const member of trip.members) {
+      if (autoAssign && tab.members.length > 0) {
+        // Auto-assign every unit to all tab members, split evenly.
+        for (const member of tab.members) {
           for (const item of bill.items) {
             for (let unitIdx = 0; unitIdx < item.quantity; unitIdx++) {
-              const existingClaim = allClaims.find(
+              const existingClaim = billClaims.find(
                 (c) =>
-                  c.billId === billId &&
                   c.itemId === item.id &&
                   c.unitIndex === unitIdx &&
-                  c.claimerId === member.userId
+                  c.claimerId === member.userId,
               );
 
               if (!existingClaim) {
@@ -296,7 +279,7 @@ export default function PublicTripPage({
                   itemId: item.id,
                   unitIndex: unitIdx,
                   portions: 1,
-                  splitInto: trip.members.length,
+                  splitInto: tab.members.length,
                   claimerId: member.userId,
                   name: member.name,
                   initials: initialsFromName(member.name),
@@ -314,13 +297,13 @@ export default function PublicTripPage({
     }
   }
 
-  if (trip === undefined || !bills) return null;
-  if (trip === null) {
+  if (tab === undefined) return null;
+  if (tab === null) {
     return (
       <main>
         <Header />
         <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-          <h1 className="font-display text-3xl font-bold">Trip not found</h1>
+          <h1 className="font-display text-3xl font-bold">Tab not found</h1>
           <p className="mt-3 text-sm text-[color:var(--muted)]">
             Double-check the link, or ask whoever sent it to re-share.
           </p>
@@ -332,13 +315,14 @@ export default function PublicTripPage({
 
   const shareUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}/trip/${trip.id}`
+      ? `${window.location.origin}/tab/${tab.id}`
       : "";
 
   const detailBill = detail ? bills.find((b) => b.id === detail.billId) : null;
-  const detailItem = detailBill
-    ? detailBill.items.find((it) => it.id === detail.itemId)
-    : null;
+  const detailItem =
+    detailBill && detail
+      ? detailBill.items.find((it) => it.id === detail.itemId)
+      : null;
   const detailBillClaims = detail ? (claimsByBill.get(detail.billId) ?? []) : [];
 
   const billUnits = detailItem ? unitsForItem(detailItem, detailBillClaims) : [];
@@ -379,15 +363,15 @@ export default function PublicTripPage({
 
         <div>
           <h1 className="font-display text-3xl font-bold leading-tight">
-            {trip.title}
+            {tab.title}
           </h1>
-          {trip.description && (
+          {tab.description && (
             <p className="mt-2 text-sm text-[color:var(--muted)]">
-              {trip.description}
+              {tab.description}
             </p>
           )}
           <p className="mt-3 text-sm text-[color:var(--muted)]">
-            {trip.members.length} member{trip.members.length === 1 ? "" : "s"}
+            {tab.members.length} member{tab.members.length === 1 ? "" : "s"}
           </p>
         </div>
 
@@ -428,7 +412,8 @@ export default function PublicTripPage({
                         {bill.title || "Receipt"}
                       </div>
                       <div className="text-xs text-[color:var(--muted)]">
-                        {bill.items.length} item{bill.items.length === 1 ? "" : "s"} ·{" "}
+                        {bill.items.length} item
+                        {bill.items.length === 1 ? "" : "s"} ·{" "}
                         {centsToDisplay(bill.totalCents)}
                       </div>
                     </div>
@@ -453,7 +438,8 @@ export default function PublicTripPage({
                             { length: item.quantity },
                             (_, u) => {
                               const itemClaims = billClaims.filter(
-                                (c) => c.itemId === item.id && c.unitIndex === u
+                                (c) =>
+                                  c.itemId === item.id && c.unitIndex === u,
                               );
                               return {
                                 itemId: item.id,
@@ -462,7 +448,7 @@ export default function PublicTripPage({
                                 portionsClaimed: itemClaims.length,
                                 claims: itemClaims,
                               };
-                            }
+                            },
                           );
 
                           return (
@@ -474,7 +460,9 @@ export default function PublicTripPage({
                               myClaimerId={user?.uid ?? ""}
                               myPhotoURL={
                                 user && !user.isAnonymous
-                                  ? user.photoURL ?? profile?.photoURL ?? undefined
+                                  ? user.photoURL ??
+                                    profile?.photoURL ??
+                                    undefined
                                   : undefined
                               }
                               onQuickClaim={(unitIndex) =>
@@ -547,9 +535,9 @@ export default function PublicTripPage({
           initialUnitIndex={detail.unitIndex}
           myName={myName}
           myClaimerId={user?.uid ?? ""}
-          isOwner={!!user && user.uid === trip.creatorId}
-          onClaim={(args) => void detailClaim(detail.billId, args)}
-          onUnclaim={(claimId) => void unclaim(detail.billId, claimId)}
+          isOwner={!!user && user.uid === tab.creatorId}
+          onClaim={(args) => detailClaim(detail.billId, args)}
+          onUnclaim={(claimId) => unclaim(detail.billId, claimId)}
         />
       )}
 
@@ -557,64 +545,97 @@ export default function PublicTripPage({
         <SplitEvenlyModal
           open
           onClose={() => setSplitEvenlyBill(null)}
-          defaultSplitCount={trip.members.length}
+          defaultSplitCount={tab.members.length}
           onApply={(splitCount, autoAssign) =>
-            void applySplitEvenly(splitEvenlyBill, splitCount, autoAssign)
+            applySplitEvenly(splitEvenlyBill, splitCount, autoAssign)
           }
         />
       )}
 
       {/* Sticky bottom bar: name input or settlement */}
-      {hasClaims && mySettlement ? (
+      {hasClaims && mySettlement && Object.keys(mySettlement).length > 0 ? (
         <div className="sticky-name-bar">
           <div className="mx-auto max-w-2xl">
             <div className="text-sm font-semibold mb-3">Settlement</div>
 
-            {/* Settlement grid */}
             <div className="grid gap-2">
               {Object.entries(mySettlement).map(
                 ([userId, { owesYou, youOwe }]) => {
-                  const member = trip.members.find((m) => m.userId === userId);
+                  const member = tab.members.find((m) => m.userId === userId);
                   if (!member) return null;
+
+                  // When I owe this member, deep-link into their payment app
+                  // using the payment handles on a receipt they created.
+                  const theirBill = bills.find((b) => b.creatorId === userId);
+                  const payLinks =
+                    youOwe > 0 && theirBill
+                      ? buildPayLinks({
+                          methods: theirBill.paymentMethods,
+                          amountCents: youOwe,
+                          note: tab.title
+                            ? `Owez - ${tab.title}`
+                            : "Owez tab",
+                          creatorName: member.name,
+                        })
+                      : [];
 
                   return (
                     <div
                       key={userId}
-                      className="flex items-center justify-between p-3 rounded-lg border border-[color:var(--border)]"
+                      className="rounded-lg border border-[color:var(--border)] p-3"
                     >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        {member.photoURL && (
-                          <img
-                            src={member.photoURL}
-                            alt={member.name}
-                            className="h-8 w-8 rounded-full"
-                          />
-                        )}
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium truncate">
-                            {member.name}
-                          </div>
-                          <div className="text-xs text-[color:var(--muted)]">
-                            {owesYou > 0 && youOwe === 0
-                              ? `owes you ${centsToDisplay(owesYou)}`
-                              : youOwe > 0 && owesYou === 0
-                                ? `you owe ${centsToDisplay(youOwe)}`
-                                : "settled"}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {member.photoURL && (
+                            <img
+                              src={member.photoURL}
+                              alt={member.name}
+                              className="h-8 w-8 rounded-full"
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {member.name}
+                            </div>
+                            <div className="text-xs text-[color:var(--muted)]">
+                              {owesYou > 0 && youOwe === 0
+                                ? `owes you ${centsToDisplay(owesYou)}`
+                                : youOwe > 0 && owesYou === 0
+                                  ? `you owe ${centsToDisplay(youOwe)}`
+                                  : owesYou > 0 || youOwe > 0
+                                    ? `net: you owe ${centsToDisplay(
+                                        youOwe,
+                                      )}, they owe ${centsToDisplay(owesYou)}`
+                                    : "settled"}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {owesYou > 0 && (
-                        <div className="text-right ml-2">
-                          <div className="text-sm font-semibold tabular-nums">
+                        {owesYou > 0 && (
+                          <div className="text-right ml-2 text-sm font-semibold tabular-nums">
                             {centsToDisplay(owesYou)}
                           </div>
-                          {/* Payment buttons would go here */}
+                        )}
+                      </div>
+
+                      {payLinks.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {payLinks.map((link) => (
+                            <a
+                              key={link.kind}
+                              href={link.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn btn-primary !h-8 !px-3 text-xs"
+                            >
+                              {link.label}
+                            </a>
+                          ))}
                         </div>
                       )}
                     </div>
                   );
-                }
+                },
               )}
             </div>
           </div>
@@ -632,6 +653,14 @@ export default function PublicTripPage({
                 className="w-full"
               />
             </label>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed inset-x-0 bottom-28 z-50 flex justify-center px-4">
+          <div className="rounded-full bg-black/85 px-4 py-2 text-sm text-white shadow-lg">
+            {toast}
           </div>
         </div>
       )}

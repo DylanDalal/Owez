@@ -120,8 +120,84 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <div className="receipt-divider mx-auto max-w-5xl" />
+
+      {/* Tabs: multi-receipt use case (one night out → whole trip) */}
+      <section className="mx-auto max-w-5xl px-4 py-20">
+        <div className="grid items-center gap-10 md:grid-cols-2">
+          <div>
+            <h2 className="font-display text-4xl font-bold tracking-tight md:text-5xl">
+              Going out?
+              <br />
+              Start a Tab.
+            </h2>
+            <p className="mt-6 max-w-md text-lg text-[color:var(--muted)]">
+              One dinner or a whole weekend away — group every receipt under a
+              single link. Whoever paid adds their receipts, friends claim their
+              items across all of them, and everyone settles up with you once at
+              the end.
+            </p>
+            <ul className="mt-6 space-y-2 text-[color:var(--muted)]">
+              <li className="flex items-start gap-2">
+                <span className="text-[color:var(--color-accent-ink)]">•</span>
+                <span>
+                  <strong className="text-[color:var(--fg)]">A night out:</strong>{" "}
+                  drinks, dinner, and the cab home on one tab.
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-[color:var(--color-accent-ink)]">•</span>
+                <span>
+                  <strong className="text-[color:var(--fg)]">A whole trip:</strong>{" "}
+                  days of receipts from everyone, netted into a single number.
+                </span>
+              </li>
+            </ul>
+            <div className="mt-8">
+              <Link href="/new-tab" className="btn btn-primary text-base">
+                Start a tab
+              </Link>
+            </div>
+          </div>
+          <LandingTabMock />
+        </div>
+      </section>
+
       <Footer />
     </main>
+  );
+}
+
+function LandingTabMock() {
+  return (
+    <div className="card p-4">
+      <div className="flex items-baseline justify-between">
+        <h4 className="font-display text-lg font-bold">Cabo with the crew</h4>
+        <span className="text-xs text-[color:var(--muted)]">4 people</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {[
+          { name: "Beach Club Lunch", total: "$184.00" },
+          { name: "Taquería El Fogón", total: "$72.50" },
+          { name: "Airport Cabs", total: "$96.00" },
+        ].map((r) => (
+          <div
+            key={r.name}
+            className="flex items-center justify-between rounded-lg border border-[color:var(--border)] px-3 py-2"
+          >
+            <span className="font-medium">{r.name}</span>
+            <span className="tabular-nums">{r.total}</span>
+          </div>
+        ))}
+      </div>
+      <div className="receipt-divider my-3" />
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold">You're owed</span>
+        <span className="font-display text-lg font-bold tabular-nums">
+          $176.13
+        </span>
+      </div>
+    </div>
   );
 }
 

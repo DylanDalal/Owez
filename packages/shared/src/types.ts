@@ -62,8 +62,8 @@ export interface Bill {
   tipCents: number;
   totalCents: number;
   paymentMethods: PaymentMethods;
-  /** Optional reference to parent trip if this bill is part of a multi-receipt trip. */
-  tripId?: string;
+  /** Optional reference to parent tab if this bill is part of a multi-receipt tab. */
+  tabId?: string;
 }
 
 /**
@@ -104,7 +104,7 @@ export interface Claim {
   duplicate?: boolean;
 }
 
-/** Response shape from /api/parse-receipt — Mindee output normalized. */
+/** Response shape from /api/parse-receipt — OpenAI output normalized. */
 export interface ParsedReceipt {
   merchant?: string;
   items: Array<{
@@ -136,16 +136,20 @@ export interface UserProfile {
   updatedAt?: number;
 }
 
-/** A user who has joined a trip and claimed items. */
-export interface TripMember {
+/** A user who has joined a tab and claimed items. */
+export interface TabMember {
   userId: string;
   name: string;
   photoURL?: string;
   joinedAt: number;
 }
 
-/** A trip document containing multiple shared receipts/bills. */
-export interface Trip {
+/**
+ * A tab document grouping multiple shared receipts/bills — a single night
+ * out or a multi-day trip. Friends claim items across every receipt on the
+ * tab and settle up once at the end.
+ */
+export interface Tab {
   id: string;
   creatorId: string;
   creatorName?: string;
@@ -153,7 +157,7 @@ export interface Trip {
   createdAt: number;
   title: string;
   description?: string;
-  members: TripMember[];
+  members: TabMember[];
   receiptIds: string[];
   status: "active" | "settled";
   updatedAt?: number;

@@ -51,21 +51,58 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+/** How long to wait for Firebase auth to initialize before showing the user
+ *  a retry prompt instead of an indefinite spinner. */
+const AUTH_INIT_TIMEOUT_MS = 12_000;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Track auth state. On mount, also pick up any pending redirect result
   // (from signInWithRedirect used on mobile).
+  //
+  // If Firebase fails to initialize, errors, or never calls us back (e.g. a
+  // flaky connection or a blocked third-party-storage context), we surface a
+  // retry prompt rather than leaving the whole app blank forever.
   useEffect(() => {
-    const { auth } = getFirebase();
-    getRedirectResult(auth).catch(() => {});
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    let settled = false;
+    const finish = (err?: string) => {
+      settled = true;
+      clearTimeout(timer);
+      if (err) setError(err);
       setLoading(false);
-    });
-    return unsub;
+    };
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        setError("Couldn't reach the server. Check your connection and try again.");
+        setLoading(false);
+      }
+    }, AUTH_INIT_TIMEOUT_MS);
+
+    let unsub: (() => void) | undefined;
+    try {
+      const { auth } = getFirebase();
+      getRedirectResult(auth).catch(() => {});
+      unsub = onAuthStateChanged(
+        auth,
+        (u) => {
+          setUser(u);
+          finish();
+        },
+        () => finish("Something went wrong signing you in. Please try again."),
+      );
+    } catch {
+      finish("Something went wrong loading the app. Please try again.");
+    }
+
+    return () => {
+      clearTimeout(timer);
+      unsub?.();
+    };
   }, []);
 
   // Live-subscribe to the user's profile doc whenever a non-anonymous user
@@ -142,9 +179,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  if (loading) return null;
+  if (error) return <AuthErrorScreen message={error} />;
+  if (loading) return <AuthLoadingScreen />;
 
   return <AuthContext value={value}>{children}</AuthContext>;
+}
+
+/** Branded full-screen spinner shown while Firebase auth initializes. */
+function AuthLoadingScreen() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+      <span
+        className="h-8 w-8 animate-spin rounded-full border-2 border-[color:var(--border)] border-t-[color:var(--color-accent)]"
+        role="status"
+        aria-label="Loading"
+      />
+      <p className="font-display text-lg">Loading Owez…</p>
+    </main>
+  );
+}
+
+/** Shown when auth init fails or times out, so the app never hangs blank. */
+function AuthErrorScreen({ message }: { message: string }) {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+      <h1 className="font-display text-2xl font-bold">Something went wrong</h1>
+      <p className="max-w-sm text-sm text-[color:var(--muted)]">{message}</p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="btn btn-primary"
+      >
+        Try again
+      </button>
+    </main>
+  );
 }
 
 export function useAuth(): AuthState {

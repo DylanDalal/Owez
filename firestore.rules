@@ -3,9 +3,10 @@ rules_version = '2';
 // Owez Firestore security rules.
 //
 // Model:
-//  - trips/{tripId}                 — trip doc (multi-receipt group), owned by creator.
+//  - tabs/{tabId}                   — tab doc (multi-receipt group for a night
+//                                     out or a trip), owned by creator.
 //  - bills/{billId}                 — bill doc (single receipt), owned by its creator.
-//                                     can optionally reference a trip via tripId.
+//                                     can optionally reference a tab via tabId.
 //  - bills/{billId}/claims/{claimId} — one doc per (itemId, unitIndex) claim.
 //                                     doc id is auto-generated; `claimerId`
 //                                     field is pinned to request.auth.uid.
@@ -14,12 +15,14 @@ rules_version = '2';
 //                                     creator/member display names/photos.
 //
 // Design notes:
-//  - Anyone can READ a trip or bill, since the whole point is that the creator
+//  - Anyone can READ a tab or bill, since the whole point is that the creator
 //    shares links with friends. Security relies on UUID unguessability, not auth.
-//  - Writing trips/bills requires auth and request.auth.uid == creatorId.
+//  - Writing tabs/bills requires auth and request.auth.uid == creatorId, except
+//    that any authenticated viewer may append themselves to a tab's member list
+//    (members/updatedAt only) — that's how friends join a shared tab on claim.
 //  - Each claim doc stores its claimerId as a field; rules make sure it
 //    matches the authenticated uid on create/update.
-//  - Trip/Bill creators can delete any claim on their own trip/bill (for cleanup).
+//  - Tab/Bill creators can delete any claim on their own tab/bill (for cleanup).
 //    Anonymous friends can only touch their own claims.
 
 service cloud.firestore {
@@ -32,15 +35,26 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
-    match /trips/{tripId} {
+    match /tabs/{tabId} {
       allow read: if true;
 
       allow create: if request.auth != null
                     && request.auth.uid == request.resource.data.creatorId
-                    && request.resource.data.id == tripId;
+                    && request.resource.data.id == tabId;
 
-      allow update, delete: if request.auth != null
-                            && request.auth.uid == resource.data.creatorId;
+      // Creator can edit/delete freely. Any authenticated viewer may also
+      // update, but only to append themselves to the member list — they may
+      // touch `members` and `updatedAt` and nothing else. (Not constrained to
+      // adding *only* themselves; same UUID-unguessability trust model as claims.)
+      allow update: if request.auth != null
+                    && (
+                      request.auth.uid == resource.data.creatorId
+                      || request.resource.data.diff(resource.data)
+                           .affectedKeys().hasOnly(['members', 'updatedAt'])
+                    );
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.creatorId;
     }
 
     match /bills/{billId} {

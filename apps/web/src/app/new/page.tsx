@@ -21,7 +21,7 @@ import { centsToDisplay } from "@/lib/format";
 /**
  * Create flow, three stages:
  *   upload  — pick a photo (camera or file)
- *   parsing — waiting on Mindee
+ *   parsing — waiting on OpenAI
  *   edit    — show the parsed receipt, let the user correct mistakes
  *   saving  — in-flight Firestore write
  *
@@ -275,7 +275,7 @@ function NewBillInner() {
             <p className="mt-2 text-sm text-[color:var(--muted)]">
               This usually takes a couple seconds.
             </p>
-            {/* Ad shown while Mindee processes the receipt */}
+            {/* Ad shown while OpenAI processes the receipt */}
             <AdSlot
               slot={process.env.NEXT_PUBLIC_AD_SLOT_PARSING ?? ""}
               format="auto"
