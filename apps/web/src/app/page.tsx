@@ -132,10 +132,8 @@ export default function LandingPage() {
               Start a Tab.
             </h2>
             <p className="mt-6 max-w-md text-lg text-[color:var(--muted)]">
-              One dinner or a whole weekend away — group every receipt under a
-              single link. Whoever paid adds their receipts, friends claim their
-              items across all of them, and everyone settles up with you once at
-              the end.
+              Upload multiple receipts and invite friends to upload theirs.
+              Everyone claims their portion and settles up once.
             </p>
             <ul className="mt-6 space-y-2 text-[color:var(--muted)]">
               <li className="flex items-start gap-2">

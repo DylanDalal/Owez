@@ -320,7 +320,7 @@ export function ItemDetailSheet({
               Duplicate Claim
             </button>
             <p className="mt-2 text-xs text-[color:var(--muted)]">
-              Pick this if you ordered one of these too — you'll owe the full{" "}
+              Pick this if you ordered one of these too. You'll owe the full{" "}
               {centsToDisplay(item.priceCents)} on top of the existing claim.
             </p>
           </>

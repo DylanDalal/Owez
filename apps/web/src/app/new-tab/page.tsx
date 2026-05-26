@@ -189,8 +189,8 @@ function NewTabInner() {
       <section className="mx-auto max-w-xl px-4 py-10">
         <h1 className="font-display text-3xl font-bold">New tab</h1>
         <p className="mt-2 text-sm text-[color:var(--muted)]">
-          Group a night out or a whole trip — add every receipt you paid for
-          and your friends settle up once.
+          Group a night out or a whole trip. Add every receipt you paid for and
+          your friends settle up once.
         </p>
 
         {(stage === "details" || stage === "saving") && (
@@ -293,7 +293,7 @@ function NewTabInner() {
 
             <div className="card p-4 text-sm border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/5">
               <div className="text-sm">
-                <strong>Only upload receipts that you paid for</strong> — your
+                <strong>Only upload receipts that you paid for.</strong> Your
                 friends will be able to add items when you send them the link.
               </div>
             </div>

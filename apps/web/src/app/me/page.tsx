@@ -135,16 +135,23 @@ function MyDashboardInner() {
         {/* Receipts view */}
         {view === "receipts" && (
           <>
-            <div className="flex items-center justify-between gap-3 mb-8">
-              <div>
+            <div className="flex items-center justify-between gap-4 mb-8">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm text-[color:var(--muted)]">
+                  Snap a receipt and share the link. Friends pick their items
+                  and pay you back.
+                </p>
+                <p className="mt-1 text-sm">
                   Total recouped:{" "}
                   <span className="font-semibold">
                     {centsToDisplay(totalRecoupedCents)}
                   </span>
                 </p>
               </div>
-              <Link href="/new" className="btn btn-primary">
+              <Link
+                href="/new"
+                className="btn btn-primary shrink-0 whitespace-nowrap"
+              >
                 + New receipt
               </Link>
             </div>
@@ -220,14 +227,17 @@ function MyDashboardInner() {
         {/* Tabs view */}
         {view === "tabs" && (
           <>
-            <div className="flex items-center justify-between gap-3 mb-8">
-              <div>
+            <div className="flex items-center justify-between gap-4 mb-8">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm text-[color:var(--muted)]">
-                  Group multiple receipts from a night out or a trip — everyone
-                  claims what's theirs and settles up once.
+                  Upload multiple receipts and invite friends to upload theirs.
+                  Everyone claims their portion and settles up once.
                 </p>
               </div>
-              <Link href="/new-tab" className="btn btn-primary">
+              <Link
+                href="/new-tab"
+                className="btn btn-primary shrink-0 whitespace-nowrap"
+              >
                 + New tab
               </Link>
             </div>

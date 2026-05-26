@@ -14,11 +14,13 @@ import type { ParsedReceipt } from "@owez/shared";
  *   2. Put the key in .env.local:
  *        OPENAI_API_KEY=sk-...
  *   3. (Optional) Override the model:
- *        OPENAI_MODEL=gpt-4o-mini
+ *        OPENAI_MODEL=gpt-4o-mini   (cheaper, lower accuracy)
  */
 
 const OPENAI_URL = "https://api.openai.com/v1/responses";
-const DEFAULT_MODEL = "gpt-4o-mini";
+// gpt-4o reads small receipt line-item text far more reliably than the mini
+// model. Override with OPENAI_MODEL if you want to trade accuracy for cost.
+const DEFAULT_MODEL = "gpt-4o";
 
 export async function POST(req: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -48,8 +50,68 @@ export async function POST(req: Request) {
 
 async function fileToDataUrl(file: File): Promise<string> {
   const buf = Buffer.from(await file.arrayBuffer());
-  const mime = file.type || "image/jpeg";
+  // Trust the sniffed bytes over the browser-provided type: a mislabeled
+  // image (e.g. a WEBP sent as image/jpeg) makes the vision model misread or
+  // reject it. Falls back to the declared type, then JPEG.
+  const mime = sniffImageMime(buf) ?? file.type ?? "image/jpeg";
+
+  // OpenAI vision does not accept HEIC/HEIF (the default iPhone photo format).
+  // Convert it to JPEG server-side so those uploads parse instead of failing.
+  if (mime === "image/heic" || mime === "image/heif") {
+    const jpeg = await heicToJpeg(buf);
+    return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+  }
+
   return `data:${mime};base64,${buf.toString("base64")}`;
+}
+
+/** Convert a HEIC/HEIF image to JPEG. Lazily loads the (wasm-backed) converter
+ *  so it's only pulled in when an Apple photo actually arrives. */
+async function heicToJpeg(buf: Buffer): Promise<Buffer> {
+  const convert = (await import("heic-convert")).default;
+  // NB: heic-convert's @types declare `buffer: ArrayBufferLike`, but at runtime
+  // it requires a Buffer/Uint8Array (it calls array.slice and spreads it). An
+  // ArrayBuffer throws, so we pass the Buffer and cast past the wrong type.
+  const out = await convert({
+    buffer: buf as unknown as ArrayBufferLike,
+    format: "JPEG",
+    quality: 0.92,
+  });
+  return Buffer.from(out);
+}
+
+/** Detect image type from magic bytes for the formats OpenAI vision accepts,
+ *  plus HEIC/HEIF (which we convert before sending). */
+function sniffImageMime(buf: Buffer): string | null {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (
+    buf.length >= 12 &&
+    buf.toString("ascii", 0, 4) === "RIFF" &&
+    buf.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  if (buf.length >= 4 && buf.toString("ascii", 0, 4) === "GIF8") {
+    return "image/gif";
+  }
+  // ISO-BMFF (HEIC/HEIF): "ftyp" box at offset 4, brand at offset 8.
+  if (buf.length >= 12 && buf.toString("ascii", 4, 8) === "ftyp") {
+    const brand = buf.toString("ascii", 8, 12);
+    const heicBrands = ["heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1", "heif"];
+    if (heicBrands.includes(brand)) return "image/heic";
+  }
+  return null;
 }
 
 const RECEIPT_SCHEMA = {
@@ -91,8 +153,17 @@ interface OpenAIReceipt {
 }
 
 async function callOpenAI(dataUrl: string, model: string, apiKey: string): Promise<OpenAIReceipt> {
-  const instructions =
-    "You are a receipt parser. Extract the merchant name, line items, subtotal, tax, tip, and total from the receipt image. For each line item return the per-unit price (divide line total by quantity if the receipt only shows line totals). All money amounts must be in the receipt's main currency unit (e.g. dollars), not cents. Return null for any field you can't read.";
+  const instructions = [
+    "You are a meticulous receipt parser. Read the receipt image carefully and transcribe every line item exactly as printed.",
+    "Rules:",
+    "- Include EVERY line item, in order. Do not merge, skip, or invent items.",
+    "- quantity is the count shown for that line (default 1 if none is shown).",
+    "- unit_price is the price for a SINGLE unit. If the receipt shows a line total for quantity > 1, divide the line total by the quantity.",
+    "- Capture subtotal, tax, tip, and total separately if present. Do not fold tax or tip into item prices.",
+    "- All money amounts are in the receipt's main currency unit (e.g. dollars like 12.50), never cents.",
+    "- Read digits precisely; double-check that your line items sum to the subtotal before answering.",
+    "- Return null for any field you genuinely cannot read. Do not guess totals.",
+  ].join("\n");
 
   const res = await fetch(OPENAI_URL, {
     method: "POST",
@@ -102,12 +173,15 @@ async function callOpenAI(dataUrl: string, model: string, apiKey: string): Promi
     },
     body: JSON.stringify({
       model,
+      max_output_tokens: 4096,
       input: [
         {
           role: "user",
           content: [
             { type: "input_text", text: instructions },
-            { type: "input_image", image_url: dataUrl },
+            // "high" detail sends the full-resolution image so the model can
+            // read small line-item text — the single biggest accuracy lever.
+            { type: "input_image", image_url: dataUrl, detail: "high" },
           ],
         },
       ],
@@ -188,7 +262,7 @@ function reconcileItems(
   const computedSum = items.reduce((s, it) => s + it.priceCents * it.quantity, 0);
 
   if (expected <= 0) {
-    return { items, warning: "Couldn't verify item prices — no subtotal on receipt." };
+    return { items, warning: "Couldn't verify item prices. No subtotal on receipt." };
   }
   if (computedSum <= 0) return { items };
 
@@ -208,7 +282,7 @@ function reconcileItems(
   const drift = Math.abs(finalSum - expected) / expected;
 
   if (didCorrect && drift <= 0.05) {
-    return { items: corrected, warning: "Some item prices were auto-corrected — double-check quantities." };
+    return { items: corrected, warning: "Some item prices were auto-corrected. Double-check quantities." };
   }
   if (didCorrect) {
     return { items: corrected, warning: "Item prices were auto-corrected but still don't match the receipt total. Please review all prices." };

@@ -179,8 +179,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  // We intentionally do NOT block the whole app while auth initializes —
+  // doing so blanked even auth-free pages (landing, privacy) behind the
+  // Firebase SDK download. Children render immediately and read `loading`
+  // from context; pages that require a resolved account gate themselves
+  // (see SignInGate). A hard init failure still shows a retry screen.
   if (error) return <AuthErrorScreen message={error} />;
-  if (loading) return null;
 
   return <AuthContext value={value}>{children}</AuthContext>;
 }

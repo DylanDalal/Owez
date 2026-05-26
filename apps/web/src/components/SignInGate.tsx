@@ -28,7 +28,7 @@ export function SignInGate({ children }: { children: ReactNode }) {
           <h1 className="font-display text-4xl font-bold">Sign in to continue</h1>
           <p className="mt-4 text-sm text-[color:var(--muted)]">
             Bill creators sign in so we can tie receipts to you. Friends claim
-            items without an account — they just open the share link.
+            items without an account. They just open the share link.
           </p>
 
           <div className="mt-8 space-y-3">
