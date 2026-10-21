@@ -144,17 +144,25 @@ export async function getClaimsOnce(billId: BillId): Promise<Claim[]> {
 export async function claimItemUnit(
   billId: BillId,
   data: Omit<Claim, "id" | "createdAt">,
+  /**
+   * Claims already known to be on this bill (from the page's live
+   * subscription). When provided we validate against these instead of doing
+   * a server round-trip first — that read was the visible lag between a tap
+   * and the stamp appearing. Firestore's latency compensation then shows the
+   * new claim locally the moment addDoc is called.
+   */
+  knownClaims?: Claim[],
 ): Promise<ClaimId> {
   const { db } = getFirebase();
   const claimsCol = collection(db, "bills", billId, "claims");
 
   // Pre-flight conflict check.
-  const snap = await getDocs(claimsCol);
-  const onUnit = snap.docs
-    .map((d) => claimFromDoc(d.id, d.data()))
-    .filter(
-      (c) => c.itemId === data.itemId && c.unitIndex === data.unitIndex,
-    );
+  const existing =
+    knownClaims ??
+    (await getDocs(claimsCol)).docs.map((d) => claimFromDoc(d.id, d.data()));
+  const onUnit = existing.filter(
+    (c) => c.itemId === data.itemId && c.unitIndex === data.unitIndex,
+  );
   assertClaimAllowed(onUnit, {
     portions: data.portions,
     splitInto: data.splitInto,

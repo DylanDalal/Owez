@@ -175,6 +175,7 @@ main {
 
 /* Button component. .btn + .btn-primary / .btn-ghost. */
 .btn {
+  touch-action: manipulation;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -215,6 +216,8 @@ main {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 18px;
+  /* Taps should fire immediately — no double-tap-to-zoom wait on touch. */
+  touch-action: manipulation;
   /* Long-press opens the item sheet; stop iOS from showing the callout /
    * magnifier over the card at the same time. */
   -webkit-touch-callout: none;

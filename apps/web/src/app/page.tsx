@@ -48,8 +48,8 @@ export default function LandingPage() {
           </h1>
           <p className="mt-6 max-w-md text-lg text-[color:var(--muted)]">
             Upload your receipt and send a link. Your friends pick their stuff
-            and pay you back. They don't need the app. They don't even need
-            to sign up.
+            and pay you back. No account, no sign-up. They just open the
+            link.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             {signedIn ? (

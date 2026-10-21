@@ -93,10 +93,22 @@ export default function PublicBillPage({
     const saved = localStorage.getItem("owez-guest-name") ?? "";
     if (saved) setMyName(saved);
   }, []);
+  // Signed-in users shouldn't have to type a name. Prefer the profile's
+  // display name, then the auth provider's (Apple often returns none), then
+  // the bill's own creatorName when the viewer is its creator, then the
+  // email's local part. Anonymous friends still type theirs.
   useEffect(() => {
-    if (profile?.displayName && !myName) setMyName(profile.displayName);
+    if (myName.trim()) return;
+    if (!user || user.isAnonymous) return;
+    const fallback =
+      profile?.displayName?.trim() ||
+      user.displayName?.trim() ||
+      (bill && bill.creatorId === user.uid ? bill.creatorName?.trim() : "") ||
+      user.email?.split("@")[0] ||
+      "";
+    if (fallback) setMyName(fallback);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.displayName]);
+  }, [profile?.displayName, user, bill?.creatorName]);
 
   function saveMyName(name: string) {
     setMyName(name);
@@ -161,7 +173,7 @@ export default function PublicBillPage({
         name: myName.trim(),
         initials: initialsFromName(myName),
         photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
-      });
+      }, claims);
     } catch (e) {
       flashToast(e instanceof Error ? e.message : "Could not claim", 2600);
     }
@@ -206,7 +218,7 @@ export default function PublicBillPage({
         initials: initialsFromName(myName),
         photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
         duplicate: args.duplicate,
-      });
+      }, claims);
     }
   }
 

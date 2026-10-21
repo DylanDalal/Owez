@@ -120,10 +120,20 @@ export default function PublicTabPage({
     if (saved) setMyName(saved);
   }, []);
 
+  // Signed-in users shouldn't have to type a name (see the bill page for the
+  // same fallback chain).
   useEffect(() => {
-    if (profile?.displayName && !myName) setMyName(profile.displayName);
+    if (myName.trim()) return;
+    if (!user || user.isAnonymous) return;
+    const fallback =
+      profile?.displayName?.trim() ||
+      user.displayName?.trim() ||
+      (tab && tab.creatorId === user.uid ? tab.creatorName?.trim() : "") ||
+      user.email?.split("@")[0] ||
+      "";
+    if (fallback) setMyName(fallback);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.displayName]);
+  }, [profile?.displayName, user, tab?.creatorName]);
 
   function saveMyName(name: string) {
     setMyName(name);
@@ -217,7 +227,7 @@ export default function PublicTabPage({
         name: myName.trim(),
         initials: initialsFromName(myName),
         photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
-      });
+      }, claimsByBill.get(billId) ?? []);
       await ensureMember();
     } catch (e) {
       flashToast(e instanceof Error ? e.message : "Could not claim", 2600);
@@ -266,7 +276,7 @@ export default function PublicTabPage({
           initials: initialsFromName(myName),
           photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
           duplicate: args.duplicate,
-        });
+        }, claimsByBill.get(billId) ?? []);
       }
       await ensureMember();
     } catch (e) {
@@ -328,7 +338,7 @@ export default function PublicTabPage({
             name: myName.trim(),
             initials: initialsFromName(myName),
             photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
-          });
+          }, claimsByBill.get(billId) ?? []);
           claimed++;
         }
       }
