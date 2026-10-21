@@ -52,6 +52,10 @@ export function ReceiptItemCard({
   );
 
   const allClaims = units.flatMap((u) => u.claims);
+  const people = groupByPerson(allClaims);
+  const visible = people.slice(0, MAX_VISIBLE_STAMPS);
+  const hidden = people.slice(MAX_VISIBLE_STAMPS);
+  const overflow = hidden.length;
 
   // Long-press state lives in refs so the pointer handlers never go stale
   // between renders. `longPressFired` lets us swallow the `click` the browser
@@ -133,89 +137,128 @@ export function ReceiptItemCard({
       onPointerLeave={endPress}
       onPointerCancel={endPress}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate font-semibold">{item.name}</div>
-          <div className="text-sm tabular-nums text-[color:var(--muted)]">
-            {centsToDisplay(item.priceCents)}
-            {item.quantity > 1 && ` · ×${item.quantity}`}
-          </div>
+      {/* The name gets the full card width; the stamp row is absolutely
+          positioned bottom-right with its top on the price line, so showing
+          who claimed an item never costs a row. min-h reserves the room. */}
+      <div className="min-h-14">
+        <div className="truncate font-semibold">{item.name}</div>
+        <div className="pr-44 text-sm tabular-nums text-[color:var(--muted)]">
+          {centsToDisplay(item.priceCents)}
+          {item.quantity > 1 && ` · ×${item.quantity}`}
+          {item.quantity > 1 &&
+            ` · ${Math.max(0, totalPortions - claimedPortions)} left`}
         </div>
-        {item.quantity > 1 && (
-          <div className="whitespace-nowrap text-xs text-[color:var(--muted)]">
-            {Math.max(0, totalPortions - claimedPortions)} left
-          </div>
-        )}
-      </div>
 
-      {/* Always rendered with a reserved height so the first stamp landing on
-          a card doesn't shove every card below it under the user's finger. */}
-      <div className="mt-3 flex min-h-8 flex-wrap gap-2">
-        {allClaims.flatMap((claim) => {
-            // Each split portion renders as its own half-stamp so someone
-            // claiming 3/3 of a 3-way split shows three half-stamps, not a
-            // single full one. Duplicate and whole-item claims stay full.
-            const isSplit = !claim.duplicate && claim.splitInto > 1;
-            const count = isSplit ? Math.max(1, claim.portions) : 1;
-            return Array.from({ length: count }, (_, i) => (
-              <Stamp
-                key={`${claim.id}:${i}`}
-                claim={claim}
-                mine={claim.claimerId === myClaimerId}
-                partial={isSplit}
-                onUnclaim={() => onUnclaim(claim.id)}
-              />
-            ));
-          })}
-      </div>
-
-      {/* Faded preview stamp in the bottom-right hints at what a tap will do. */}
-      {!fullyClaimed && (myInitials || myPhotoURL) && (
-        <div className="pointer-events-none absolute bottom-3 right-3 opacity-30">
-          {myPhotoURL ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={myPhotoURL}
-              alt=""
-              className="h-7 w-7 -rotate-6 rounded-full border-2 border-[color:var(--color-accent-ink)] object-cover"
+        <div className="absolute right-4 top-10 flex h-8 items-center gap-1.5">
+          {visible.map((person) => (
+            <Stamp
+              key={person.claimerId}
+              person={person}
+              mine={person.claimerId === myClaimerId}
+              onUnclaim={() => person.claimIds.forEach((id) => onUnclaim(id))}
             />
-          ) : (
-            <div className="stamp !h-7 !w-7 !min-w-7 !p-0 !text-xs">
-              {myInitials}
+          ))}
+          {overflow > 0 && (
+            <OverflowStamp hidden={hidden} count={overflow} />
+          )}
+          {/* Faded preview stamp hints at what a tap will do. */}
+          {!fullyClaimed && (myInitials || myPhotoURL) && (
+            <div className="pointer-events-none opacity-30">
+              {myPhotoURL ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={myPhotoURL}
+                  alt=""
+                  className="h-7 w-7 -rotate-6 rounded-full border-2 border-[color:var(--color-accent-ink)] object-cover"
+                />
+              ) : (
+                <div className="stamp !h-7 !w-7 !min-w-7 !p-0 !text-xs">
+                  {myInitials}
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-function Stamp({
-  claim,
-  mine,
-  partial,
-  onUnclaim,
-}: {
-  claim: Claim;
-  mine: boolean;
-  partial: boolean;
-  onUnclaim: () => void;
-}) {
-  const initials = claim.initials || initialsFromName(claim.name);
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLSpanElement | null>(null);
+/** One stamp per person, no matter how many units or portions they hold. */
+const MAX_VISIBLE_STAMPS = 3;
 
-  // Close the name tooltip when the user taps anywhere else.
+interface StampPerson {
+  claimerId: string;
+  name: string;
+  initials: string;
+  photoURL?: string;
+  claimIds: string[];
+  /** True when they hold only part of what they've touched (a split). */
+  partial: boolean;
+  /** "2/3" style summary when every claim of theirs is the same split. */
+  share: string | null;
+}
+
+function groupByPerson(claims: Claim[]): StampPerson[] {
+  const byId = new Map<string, Claim[]>();
+  for (const c of claims) {
+    const list = byId.get(c.claimerId);
+    if (list) list.push(c);
+    else byId.set(c.claimerId, [c]);
+  }
+  return Array.from(byId.entries()).map(([claimerId, list]) => {
+    const splits = list.filter((c) => !c.duplicate && c.splitInto > 1);
+    const held = splits.reduce((s, c) => s + c.portions, 0);
+    const of = splits.reduce((s, c) => s + c.splitInto, 0);
+    const first = list[0]!;
+    return {
+      claimerId,
+      name: first.name,
+      initials: first.initials || initialsFromName(first.name),
+      photoURL: list.find((c) => c.photoURL)?.photoURL || undefined,
+      claimIds: list.map((c) => c.id),
+      partial: splits.length === list.length && held < of,
+      share:
+        list.length === 1 && splits.length === 1
+          ? `${held}/${of}`
+          : list.length > 1
+            ? `×${list.length}`
+            : null,
+    };
+  });
+}
+
+/** Closes a tooltip when the user taps anywhere outside `ref`. */
+function useCloseOnOutsidePointer(
+  ref: React.RefObject<HTMLElement | null>,
+  open: boolean,
+  close: () => void,
+) {
   useEffect(() => {
     if (!open) return;
     function onDocPointerDown(e: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
     }
     document.addEventListener("pointerdown", onDocPointerDown);
     return () => document.removeEventListener("pointerdown", onDocPointerDown);
-  }, [open]);
+  }, [open, ref, close]);
+}
+
+const tooltipClass =
+  "absolute right-0 top-full z-20 mt-1 whitespace-nowrap rounded-md border border-[color:var(--border)] bg-[color:var(--card)] px-2 py-1 text-xs shadow";
+
+function Stamp({
+  person,
+  mine,
+  onUnclaim,
+}: {
+  person: StampPerson;
+  mine: boolean;
+  onUnclaim: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLSpanElement | null>(null);
+  useCloseOnOutsidePointer(rootRef, open, () => setOpen(false));
 
   return (
     <span
@@ -226,34 +269,31 @@ function Stamp({
         setOpen((v) => !v);
       }}
     >
-      {claim.photoURL ? (
+      {person.photoURL ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={claim.photoURL}
-          alt={claim.name}
+          src={person.photoURL}
+          alt={person.name}
           className={
             "h-8 w-8 -rotate-6 rounded-full border-2 border-[color:var(--color-accent-ink)] object-cover" +
-            (partial ? " stamp-half" : "")
+            (person.partial ? " stamp-half" : "")
           }
         />
       ) : (
         <span
           className={
             "stamp animate-[stampIn_260ms_cubic-bezier(0.2,0.9,0.3,1.2)] !h-8 !w-8 !min-w-8 !p-0 !text-xs" +
-            (partial ? " stamp-half" : "")
+            (person.partial ? " stamp-half" : "")
           }
         >
-          {initials}
+          {person.initials}
         </span>
       )}
       {open && (
-        <span className="absolute left-0 top-full z-20 mt-1 whitespace-nowrap rounded-md border border-[color:var(--border)] bg-[color:var(--card)] px-2 py-1 text-xs shadow">
-          {claim.name}
-          {claim.splitInto > 1 && (
-            <span className="text-[color:var(--muted)]">
-              {" "}
-              ({claim.portions}/{claim.splitInto})
-            </span>
+        <span className={tooltipClass}>
+          {person.name}
+          {person.share && (
+            <span className="text-[color:var(--muted)]"> ({person.share})</span>
           )}
           {mine && (
             <button
@@ -267,6 +307,39 @@ function Stamp({
               remove
             </button>
           )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** "+2" chip for the people who didn't fit; tap to list their names. */
+function OverflowStamp({
+  hidden,
+  count,
+}: {
+  hidden: StampPerson[];
+  count: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLSpanElement | null>(null);
+  useCloseOnOutsidePointer(rootRef, open, () => setOpen(false));
+
+  return (
+    <span
+      ref={rootRef}
+      className="relative"
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen((v) => !v);
+      }}
+    >
+      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed border-[color:var(--border)] text-xs font-semibold tabular-nums text-[color:var(--muted)]">
+        +{count}
+      </span>
+      {open && (
+        <span className={tooltipClass}>
+          {hidden.map((p) => p.name).join(", ")}
         </span>
       )}
     </span>
