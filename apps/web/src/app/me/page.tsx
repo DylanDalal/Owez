@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Bill, Tab } from "@owez/shared";
 import { totalClaimedCents } from "@owez/shared";
 import { Header } from "@/components/Header";
@@ -61,12 +61,20 @@ function MyDashboardInner() {
     return unsub;
   }, [user]);
 
-  // Filter bills to show only standalone (non-tab) bills on the Receipts view
-  const standaloneBills = bills?.filter((b) => !b.tabId) ?? [];
+  // Filter bills to show only standalone (non-tab) bills on the Receipts view.
+  // Memoized on `bills` — a fresh array every render here used to re-trigger
+  // the effect below on every render, which re-fetched claims and set state
+  // in a loop ("Maximum update depth exceeded").
+  const standaloneBills = useMemo(
+    () => (bills ? bills.filter((b) => !b.tabId) : null),
+    [bills],
+  );
 
-  // Compute outstanding amounts for standalone bills
+  // Compute outstanding amounts for standalone bills. Runs only when the
+  // bill list itself changes (new/deleted/edited bill), not on every render.
   useEffect(() => {
-    if (!standaloneBills || standaloneBills.length === 0) {
+    if (standaloneBills === null) return; // still loading
+    if (standaloneBills.length === 0) {
       setBillRows([]);
       return;
     }

@@ -31,6 +31,34 @@ All three consume `@owez/shared` so the bill data model lives in exactly one pla
 
 Receipts are parsed by sending the image to a vision-capable OpenAI model constrained by a JSON schema, so the response maps directly onto `ParsedReceipt`. The `OPENAI_API_KEY` lives only on the Next.js server (`/api/parse-receipt`) — the Expo app posts images to that same route so the key never ships in the mobile bundle.
 
+### Keeping the OpenAI key from being abused
+
+`/api/parse-receipt` spends real money per call, so it is locked down (see
+`apps/web/src/app/api/parse-receipt/route.ts`):
+
+- **Auth required.** Callers must send `Authorization: Bearer <Firebase ID token>`
+  for a signed-in **Google/Apple** user. Anonymous uids are rejected because
+  they're free to mint. Tokens are verified server-side against Google's public
+  signing keys (`lib/server/verifyIdToken.ts`) — no service account needed.
+- **Rate limits** (`lib/server/rateLimit.ts`): 12 parses / 10 min and 60 / day
+  per user, plus a 300 / hour circuit breaker per server instance. The
+  in-memory limits reset when a serverless instance recycles; set
+  `FIREBASE_SERVICE_ACCOUNT_JSON` in production to make the daily cap durable
+  (it's stored in `parseUsage/{uid}`, which clients can't read or write).
+- **Upload checks.** Max 10 MB, must sniff as JPEG/PNG/WEBP/GIF/HEIC, 45 s
+  upstream timeout, and upstream error bodies are never echoed to clients.
+- The web client wraps all of this in `lib/parse.ts`. `RECEIPT_PARSER_MOCK=true`
+  returns a canned receipt in dev so the UI can be exercised without a key.
+
+The Firestore rules were tightened at the same time: documents can still be
+fetched by id (that's how share links work) but collections can no longer be
+listed by anyone (`list` is limited to "my own bills/tabs" and "bills on this
+tabId"), profiles are owner-only, friends can only *append* themselves to a
+tab's member list, and claim docs have a validated shape. Deploy with
+`firebase deploy --only firestore:rules`.
+`apps/web/scripts/test-rules.mjs` exercises all of this against the local
+emulator (`node scripts/test-rules.mjs` from `apps/web` with the emulators up).
+
 ## Prereqs
 
 - Node 20+ and pnpm 10+
@@ -97,8 +125,15 @@ After changing anything in `packages/shared`, run `pnpm build:shared` (or leave 
 The Firestore port is `8181` (not 8080 — mitmproxy holds 8080 on this machine). Set `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true` in `apps/web/.env.local` and start the suite:
 
 ```bash
-firebase emulators:start --only auth,firestore,storage
+firebase emulators:start --only auth,firestore
 ```
+
+With the emulators on, run the web app as
+`NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true RECEIPT_PARSER_MOCK=true pnpm dev:web`
+to get fake Google accounts (the Auth emulator's sign-in popup lets you add any
+account) and canned receipt parsing with no OpenAI key. To play the "friend"
+role in the same browser, open the share link on `http://127.0.0.1:3000` —
+it's a different origin from `localhost`, so it gets its own anonymous session.
 
 ## Build order (MVP)
 

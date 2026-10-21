@@ -12,6 +12,8 @@ import { ThemeToggle } from "./ThemeToggle";
 export function Header() {
   const { user, profile, isAnonymous } = useAuth();
   const signedIn = !!user && !isAnonymous;
+  // `||` not `??`: profiles store "" when there's no photo.
+  const avatar = profile?.photoURL || user?.photoURL || "";
 
   return (
     <header className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--bg)]/80 backdrop-blur">
@@ -37,10 +39,10 @@ export function Header() {
                 className="btn btn-ghost !h-9 !w-9 !p-0"
                 aria-label="Account"
               >
-                {profile?.photoURL ? (
+                {avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={profile.photoURL}
+                    src={avatar}
                     alt=""
                     className="h-7 w-7 rounded-full border-2 border-[color:var(--color-accent)] object-cover"
                   />

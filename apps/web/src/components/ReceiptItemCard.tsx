@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BillItem, Claim, UnitState } from "@owez/shared";
 import { initialsFromName } from "@owez/shared";
 import { centsToDisplay } from "@/lib/format";
@@ -53,24 +53,55 @@ export function ReceiptItemCard({
 
   const allClaims = units.flatMap((u) => u.claims);
 
-  const [pressTimer, setPressTimer] = useState<ReturnType<
-    typeof setTimeout
-  > | null>(null);
+  // Long-press state lives in refs so the pointer handlers never go stale
+  // between renders. `longPressFired` lets us swallow the `click` the browser
+  // fires on release after a long-press — without it, that click lands on
+  // the freshly opened sheet's backdrop (for cards above it) and closes it.
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFired = useRef(false);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const PRESS_MOVE_TOLERANCE_PX = 8;
+
+  function clearPressTimer() {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  }
 
   function startPress(e: React.PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    if (pressTimer) clearTimeout(pressTimer);
-    const t = setTimeout(() => {
+    clearPressTimer();
+    longPressFired.current = false;
+    pressStart.current = { x: e.clientX, y: e.clientY };
+    pressTimer.current = setTimeout(() => {
+      pressTimer.current = null;
+      longPressFired.current = true;
       onOpenDetail(nextAvailableUnit >= 0 ? nextAvailableUnit : 0);
     }, 450);
-    setPressTimer(t);
+  }
+  function movePress(e: React.PointerEvent) {
+    // Finger drifted — the user is scrolling, not pressing.
+    const start = pressStart.current;
+    if (!start || !pressTimer.current) return;
+    if (
+      Math.abs(e.clientX - start.x) > PRESS_MOVE_TOLERANCE_PX ||
+      Math.abs(e.clientY - start.y) > PRESS_MOVE_TOLERANCE_PX
+    ) {
+      clearPressTimer();
+    }
   }
   function endPress() {
-    if (pressTimer) clearTimeout(pressTimer);
-    setPressTimer(null);
+    clearPressTimer();
+    pressStart.current = null;
   }
 
+  useEffect(() => clearPressTimer, []);
+
   function handleClick() {
+    if (longPressFired.current) {
+      // Trailing click from a long-press release — the sheet is already open.
+      longPressFired.current = false;
+      return;
+    }
     if (!myName) return; // parent focuses the name input instead
     if (nextAvailableUnit === -1) {
       // Fully claimed — open the detail sheet so user can split with the
@@ -97,6 +128,7 @@ export function ReceiptItemCard({
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onPointerDown={startPress}
+      onPointerMove={movePress}
       onPointerUp={endPress}
       onPointerLeave={endPress}
       onPointerCancel={endPress}
@@ -116,9 +148,10 @@ export function ReceiptItemCard({
         )}
       </div>
 
-      {allClaims.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {allClaims.flatMap((claim) => {
+      {/* Always rendered with a reserved height so the first stamp landing on
+          a card doesn't shove every card below it under the user's finger. */}
+      <div className="mt-3 flex min-h-8 flex-wrap gap-2">
+        {allClaims.flatMap((claim) => {
             // Each split portion renders as its own half-stamp so someone
             // claiming 3/3 of a 3-way split shows three half-stamps, not a
             // single full one. Duplicate and whole-item claims stay full.
@@ -134,8 +167,7 @@ export function ReceiptItemCard({
               />
             ));
           })}
-        </div>
-      )}
+      </div>
 
       {/* Faded preview stamp in the bottom-right hints at what a tap will do. */}
       {!fullyClaimed && (myInitials || myPhotoURL) && (
@@ -171,9 +203,23 @@ function Stamp({
 }) {
   const initials = claim.initials || initialsFromName(claim.name);
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLSpanElement | null>(null);
+
+  // Close the name tooltip when the user taps anywhere else.
+  useEffect(() => {
+    if (!open) return;
+    function onDocPointerDown(e: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", onDocPointerDown);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown);
+  }, [open]);
 
   return (
     <span
+      ref={rootRef}
       className="relative"
       onClick={(e) => {
         e.stopPropagation();

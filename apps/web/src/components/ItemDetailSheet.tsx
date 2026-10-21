@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BillItem, UnitState } from "@owez/shared";
 import { initialsFromName } from "@owez/shared";
 import { centsToDisplay } from "@/lib/format";
@@ -42,26 +42,41 @@ export function ItemDetailSheet({
   const [portionsRaw, setPortionsRaw] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // The sheet is opened by a long-press; the browser then fires a `click`
+  // on release, which lands on our backdrop and would close us immediately
+  // (however long the finger was held). Only treat a backdrop click as a
+  // dismissal if the pointer also went DOWN on the backdrop while we were
+  // open — a trailing click from the press that opened us never did.
+  const backdropArmed = useRef(false);
 
   const unit = open ? units[unitIndex] : undefined;
+
+  useEffect(() => {
+    backdropArmed.current = false;
+  }, [open]);
+
+  function handleBackdropPointerDown(e: React.PointerEvent) {
+    if (e.target === e.currentTarget) backdropArmed.current = true;
+  }
+  function handleBackdropClick(e: React.MouseEvent) {
+    const armed = backdropArmed.current;
+    backdropArmed.current = false;
+    if (e.target === e.currentTarget && armed) onClose();
+  }
 
   // Seed split / portions from the unit's current state when opening.
   useEffect(() => {
     if (!open || !unit) return;
+    setPortions(1);
     if (unit.claims.length > 0 && unit.splitInto > 1) {
-      // Existing split — start with that value (user can still change it).
+      // Unit is genuinely already split — reflect that value so the user can
+      // adjust it, not "default" them into a split.
       setSplitInto(unit.splitInto);
-      setPortions(1);
-    } else if (
-      unit.claims.length > 0 &&
-      unit.splitInto <= 1 &&
-      unit.portionsClaimed >= 1
-    ) {
-      setSplitInto(2);
-      setPortions(1);
     } else {
+      // Always default to 1 ("no split"). A long-press only opens this sheet;
+      // it must never split a unit by accident. The user opts into splitting
+      // by raising this themselves.
       setSplitInto(1);
-      setPortions(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, unitIndex]);
@@ -93,12 +108,17 @@ export function ItemDetailSheet({
     (c) => c.claimerId !== myClaimerId && !c.duplicate,
   );
   const anyClaim = unit.claims.some((c) => !c.duplicate);
+  // Others hold every portion and I have none to re-allocate.
+  const nothingFree = free === 0 && !myClaim;
 
   async function confirm() {
     setErr(null);
     setBusy(true);
     try {
       if (!myName) throw new Error("Enter your name first.");
+      if (nothingFree) {
+        throw new Error("Every portion is taken. Raise the split to share it.");
+      }
       if (portions < 1 || portions > free) {
         throw new Error(`Pick between 1 and ${free} portions.`);
       }
@@ -137,7 +157,8 @@ export function ItemDetailSheet({
   return (
     <div
       className="fixed inset-0 z-50 flex select-none items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
-      onClick={onClose}
+      onPointerDown={handleBackdropPointerDown}
+      onClick={handleBackdropClick}
     >
       <div
         className="card w-full select-none rounded-b-none rounded-t-2xl p-5 sm:max-w-md sm:rounded-2xl"
@@ -165,8 +186,22 @@ export function ItemDetailSheet({
 
         {/* Prompt when someone else already claimed the whole thing */}
         {otherClaim && unit.splitInto <= 1 && !myClaim && (
-          <div className="card mt-4 !border-[color:var(--color-accent)] p-3 text-sm">
-            {otherClaim.name} already claimed this item. Split it with them?
+          <div className="card mt-4 flex items-center justify-between gap-3 !border-[color:var(--color-accent)] p-3 text-sm">
+            <span>{otherClaim.name} already claimed this item.</span>
+            {splitInto <= 1 && (
+              <button
+                type="button"
+                className="btn btn-primary shrink-0 !py-1.5 !px-3 text-sm"
+                onClick={() => {
+                  // Explicit opt-in to splitting — never defaulted.
+                  setSplitInto(2);
+                  setPortions(1);
+                  setErr(null);
+                }}
+              >
+                Split with {otherClaim.name.split(/\s+/)[0]}
+              </button>
+            )}
           </div>
         )}
 
@@ -248,7 +283,8 @@ export function ItemDetailSheet({
 
         <div className="mt-3 text-sm text-[color:var(--muted)]">
           You'd pay {centsToDisplay(centsPerPortion * portions)} ·{" "}
-          {free - portions} portion{free - portions === 1 ? "" : "s"} free
+          {Math.max(0, free - portions)} portion
+          {Math.max(0, free - portions) === 1 ? "" : "s"} free
         </div>
 
         {unit.claims.length > 0 && (
@@ -296,32 +332,44 @@ export function ItemDetailSheet({
 
         {err && <div className="mt-3 text-sm text-red-500">{err}</div>}
 
+        {nothingFree && (
+          <p className="mt-3 text-sm text-[color:var(--muted)]">
+            Every portion is taken. Raise &ldquo;Split into&rdquo; to share it,
+            or add your own below.
+          </p>
+        )}
+
         <button
           type="button"
           onClick={() => void confirm()}
-          disabled={busy || !myName || portions < 1 || portions > free}
+          disabled={
+            busy || !myName || nothingFree || portions < 1 || portions > free
+          }
           className="btn btn-primary mt-5 w-full"
         >
           {busy
             ? "Saving…"
             : myClaim
               ? "Update my portion"
-              : "Split Amount"}
+              : splitInto <= 1
+                ? "Claim whole item"
+                : `Claim ${portions}/${splitInto}`}
         </button>
 
         {anyClaim && (
           <>
+            <div className="receipt-divider my-4" />
             <button
               type="button"
               onClick={() => void confirmDuplicate()}
               disabled={busy || !myName}
-              className="btn mt-2 w-full"
+              className="btn w-full"
             >
-              Duplicate Claim
+              I also ordered one of these
             </button>
             <p className="mt-2 text-xs text-[color:var(--muted)]">
-              Pick this if you ordered one of these too. You'll owe the full{" "}
-              {centsToDisplay(item.priceCents)} on top of the existing claim.
+              Adds a separate {centsToDisplay(item.priceCents)} charge for you —
+              doesn&apos;t touch the existing split.
             </p>
           </>
         )}

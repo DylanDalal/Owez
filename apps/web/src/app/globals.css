@@ -64,7 +64,10 @@ body {
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
-  overflow-x: hidden;
+  /* `clip` (not `hidden`) — `hidden` turns body into a scroll container,
+   * which silently breaks every `position: sticky` descendant, including the
+   * bottom name/total bar on the claim page. */
+  overflow-x: clip;
 }
 
 body {
@@ -212,6 +215,9 @@ main {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 18px;
+  /* Long-press opens the item sheet; stop iOS from showing the callout /
+   * magnifier over the card at the same time. */
+  -webkit-touch-callout: none;
 }
 
 /* Inside a swipe-to-delete slider, the outer wrapper owns the rounded

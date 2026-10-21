@@ -33,15 +33,18 @@ function AccountInner() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const [ready, setReady] = useState(false);
-
+  // Seed the form from the profile doc when it arrives. A brand-new account
+  // has no users/{uid} doc yet, so we must not wait on `profile` to render —
+  // fall back to what Firebase Auth already knows about the user.
   useEffect(() => {
-    if (!profile) return;
-    setVenmo(profile.venmo ?? "");
-    setCashapp(profile.cashapp ?? "");
-    setZellePhone(profile.zellePhone ?? "");
-    setPhotoURL(profile.photoURL ?? user?.photoURL ?? "");
-    setReady(true);
+    if (profile) {
+      setVenmo(profile.venmo ?? "");
+      setCashapp(profile.cashapp ?? "");
+      setZellePhone(profile.zellePhone ?? "");
+      setPhotoURL(profile.photoURL || user?.photoURL || "");
+    } else {
+      setPhotoURL(user?.photoURL ?? "");
+    }
   }, [profile, user?.photoURL]);
 
   async function save() {
@@ -96,7 +99,7 @@ function AccountInner() {
     );
   }
 
-  if (!ready) return null;
+  if (!user) return null; // SignInGate guarantees a user; belt and braces
 
   return (
     <main>

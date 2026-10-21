@@ -15,6 +15,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Clipboard from "expo-clipboard";
 import type { Bill, BillItem, ParsedReceipt, PaymentMethods } from "@owez/shared";
 import { useAuth } from "@/lib/auth";
+import { getFirebase } from "@/lib/firebase";
 import { createBill, makeId, newBillId } from "@/lib/bills";
 import { centsToDisplay, colors, dollarInputToCents } from "@/lib/format";
 
@@ -108,11 +109,25 @@ export default function NewBillScreen() {
       const fd = new FormData();
       // @ts-expect-error — RN's FormData accepts this shape
       fd.append("receipt", { uri, name: "receipt.jpg", type: "image/jpeg" });
+      // The API requires a signed-in (non-anonymous) Firebase user. The mobile
+      // app currently only signs in anonymously, so parsing will be rejected
+      // until Google/Apple sign-in lands here (see README build order #7).
+      const token = await getFirebase().auth.currentUser?.getIdToken();
       const res = await fetch(`${apiBase}/api/parse-receipt`, {
         method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: fd,
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        let message = "Couldn't read that receipt.";
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body.error) message = body.error;
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(message);
+      }
       const parsed = (await res.json()) as ParsedReceipt;
 
       // Seed editor state with parsed values.

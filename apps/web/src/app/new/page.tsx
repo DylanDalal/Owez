@@ -2,12 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type {
-  Bill,
-  BillItem,
-  ParsedReceipt,
-  PaymentMethods,
-} from "@owez/shared";
+import type { Bill, BillItem, PaymentMethods } from "@owez/shared";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SignInGate } from "@/components/SignInGate";
@@ -15,7 +10,9 @@ import { AdSlot } from "@/components/AdSlot";
 import { useAuth } from "@/lib/auth";
 import { createBill, makeId, newBillId } from "@/lib/bills";
 import { upsertProfile } from "@/lib/profiles";
+import { parseReceiptFile } from "@/lib/parse";
 import { CentsInput } from "@/components/CentsInput";
+import { SwipeToDelete } from "@/components/SwipeToDelete";
 import { centsToDisplay } from "@/lib/format";
 
 /**
@@ -77,6 +74,21 @@ function NewBillInner() {
   const [cashapp, setCashapp] = useState("");
   const [zellePhone, setZellePhone] = useState("");
   const [parseWarning, setParseWarning] = useState<string | null>(null);
+  // What the receipt itself said the total was — shown next to our computed
+  // total so a misread line item is obvious at a glance.
+  const [receiptTotalCents, setReceiptTotalCents] = useState<number | null>(null);
+  /** Tip as printed on the receipt. We don't auto-apply it, but the printed
+   *  total includes it, so the mismatch check has to account for it. */
+  const [receiptTipCents, setReceiptTipCents] = useState(0);
+  // Object URL of the picked photo so the user can check items against it.
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoOpen, setPhotoOpen] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
+    };
+  }, [photoUrl]);
 
   // Prefill payment handles from the user's profile (if any).
   useEffect(() => {
@@ -97,15 +109,12 @@ function NewBillInner() {
   async function handleFilePicked(file: File) {
     setError(null);
     setStage("parsing");
+    setPhotoUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
     try {
-      const fd = new FormData();
-      fd.append("receipt", file);
-      const res = await fetch("/api/parse-receipt", {
-        method: "POST",
-        body: fd,
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const parsed = (await res.json()) as ParsedReceipt;
+      const parsed = await parseReceiptFile(file);
 
       setTitle(parsed.merchant ?? "");
       setItems(
@@ -121,6 +130,8 @@ function NewBillInner() {
       // misreads have charged friends for tips the creator never meant to
       // add. Start at 0 and let the user pick 15/18/20% or type a value.
       setTipCents(0);
+      setReceiptTotalCents(parsed.totalCents > 0 ? parsed.totalCents : null);
+      setReceiptTipCents(parsed.tipCents > 0 ? parsed.tipCents : 0);
       setParseWarning(parsed.warning ?? null);
       setStage("edit");
     } catch (e) {
@@ -134,11 +145,14 @@ function NewBillInner() {
       prev.map((it) => (it.id === id ? { ...it, ...patch } : it)),
     );
   }
+  function deleteItem(id: string) {
+    setItems((prev) => prev.filter((x) => x.id !== id));
+  }
   function removeItem(id: string) {
     const it = items.find((x) => x.id === id);
     const label = it?.name.trim() ? `"${it.name.trim()}"` : "this item";
     if (!confirm(`Delete ${label}?`)) return;
-    setItems((prev) => prev.filter((x) => x.id !== id));
+    deleteItem(id);
   }
   function addItem() {
     setItems((prev) => [
@@ -171,6 +185,16 @@ function NewBillInner() {
     items.length > 0 &&
     items.every((it) => it.name.trim() && it.priceCents >= 0) &&
     hasPayment;
+  // First unmet condition, in the order a user would fix them.
+  const saveBlocker = !canSave
+    ? items.length === 0
+      ? "Add at least one item."
+      : items.some((it) => !it.name.trim())
+        ? "Every item needs a name."
+        : !hasPayment
+          ? "Add at least one way to get paid — Venmo, Cash App or Zelle."
+          : null
+    : null;
 
   async function save() {
     if (!user) return;
@@ -224,7 +248,7 @@ function NewBillInner() {
         <h1 className="font-display text-3xl font-bold">New receipt</h1>
 
         {stage === "upload" && (
-          <div className="mt-6 card p-8 text-center">
+          <div className="mt-6 card flex min-h-[18rem] flex-col justify-center p-8 text-center">
             <p className="text-[color:var(--muted)]">
               Snap a photo of your receipt and we'll read every line item.
             </p>
@@ -236,6 +260,7 @@ function NewBillInner() {
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
+                e.target.value = "";
                 if (f) void handleFilePicked(f);
               }}
             />
@@ -246,6 +271,7 @@ function NewBillInner() {
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
+                e.target.value = "";
                 if (f) void handleFilePicked(f);
               }}
             />
@@ -270,7 +296,8 @@ function NewBillInner() {
         )}
 
         {stage === "parsing" && (
-          <div className="mt-6 card p-8 text-center">
+          <div className="mt-6 card flex min-h-[18rem] flex-col justify-center p-8 text-center">
+            <span className="mx-auto mb-4 block h-8 w-8 animate-spin rounded-full border-2 border-[color:var(--border)] border-t-[color:var(--color-accent)]" aria-hidden />
             <p className="font-display text-xl">Reading your receipt…</p>
             <p className="mt-2 text-sm text-[color:var(--muted)]">
               This usually takes a couple seconds.
@@ -286,15 +313,32 @@ function NewBillInner() {
 
         {(stage === "edit" || stage === "saving") && (
           <div className="mt-6 space-y-5">
-            <label className="block">
-              <span className="text-sm font-medium">Title</span>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Dinner at Lucali"
-                className="mt-1"
-              />
-            </label>
+            <div className="flex items-end gap-3">
+              <label className="block min-w-0 flex-1">
+                <span className="text-sm font-medium">Title</span>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Dinner at Lucali"
+                  className="mt-1"
+                />
+              </label>
+              {photoUrl && (
+                <button
+                  type="button"
+                  onClick={() => setPhotoOpen(true)}
+                  aria-label="View receipt photo"
+                  className="shrink-0 overflow-hidden rounded-xl border border-[color:var(--border)]"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photoUrl}
+                    alt="Your receipt"
+                    className="h-[72px] w-[54px] object-cover"
+                  />
+                </button>
+              )}
+            </div>
 
             {parseWarning && (
               <div className="card flex items-start gap-3 !border-[color:var(--color-accent)] p-3 text-sm">
@@ -322,38 +366,96 @@ function NewBillInner() {
                   + Add
                 </button>
               </div>
-              <div className="mt-3 space-y-2">
+              {/* Column headers — desktop only; on mobile each field is
+                  labelled inline within its own swipeable card. */}
+              <div className="mt-3 hidden grid-cols-[1fr_90px_60px_auto] gap-2 px-1 pb-1 text-xs font-medium text-[color:var(--muted)] sm:grid">
+                <span>Item name</span>
+                <span className="text-right">Price</span>
+                <span className="text-center">Qty</span>
+                <span aria-hidden />
+              </div>
+
+              <div className="mt-1 space-y-2">
                 {items.map((it) => (
-                  <div
-                    key={it.id}
-                    className="grid grid-cols-[1fr_90px_60px_auto] gap-2"
-                  >
-                    <input
-                      value={it.name}
-                      onChange={(e) =>
-                        updateItem(it.id, { name: e.target.value })
-                      }
-                      placeholder="Item"
-                    />
-                    <CentsInput
-                      cents={it.priceCents}
-                      onChange={(c) => updateItem(it.id, { priceCents: c })}
-                    />
-                    <QuantityInput
-                      value={it.quantity}
-                      onChange={(q) => updateItem(it.id, { quantity: q })}
-                    />
-                    <button
-                      type="button"
-                      aria-label="Delete row"
-                      className="btn btn-ghost !px-3"
-                      onClick={() => removeItem(it.id)}
-                    >
-                      ×
-                    </button>
+                  <div key={it.id}>
+                    {/* Desktop: single-row grid with an explicit delete button. */}
+                    <div className="hidden grid-cols-[1fr_90px_60px_auto] gap-2 sm:grid">
+                      <input
+                        value={it.name}
+                        onChange={(e) =>
+                          updateItem(it.id, { name: e.target.value })
+                        }
+                        placeholder="Item name"
+                      />
+                      <CentsInput
+                        cents={it.priceCents}
+                        onChange={(c) => updateItem(it.id, { priceCents: c })}
+                      />
+                      <QuantityInput
+                        value={it.quantity}
+                        onChange={(q) => updateItem(it.id, { quantity: q })}
+                      />
+                      <button
+                        type="button"
+                        aria-label="Delete row"
+                        className="btn btn-ghost !px-3"
+                        onClick={() => removeItem(it.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {/* Mobile: stacked, labelled fields. Swipe left to remove. */}
+                    <div className="sm:hidden">
+                      <SwipeToDelete
+                        onDelete={() => deleteItem(it.id)}
+                        confirmMessage={`Delete ${
+                          it.name.trim() ? `"${it.name.trim()}"` : "this item"
+                        }?`}
+                      >
+                        <div className="card space-y-2 p-3">
+                          <input
+                            value={it.name}
+                            onChange={(e) =>
+                              updateItem(it.id, { name: e.target.value })
+                            }
+                            placeholder="Item name"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs text-[color:var(--muted)]">
+                                Price
+                              </span>
+                              <CentsInput
+                                cents={it.priceCents}
+                                onChange={(c) =>
+                                  updateItem(it.id, { priceCents: c })
+                                }
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs text-[color:var(--muted)]">
+                                Quantity
+                              </span>
+                              <QuantityInput
+                                value={it.quantity}
+                                onChange={(q) =>
+                                  updateItem(it.id, { quantity: q })
+                                }
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </SwipeToDelete>
+                    </div>
                   </div>
                 ))}
               </div>
+
+              {/* Hint so the swipe affordance is discoverable on touch. */}
+              <p className="mt-2 text-center text-xs text-[color:var(--muted)] sm:hidden">
+                Swipe a row left to remove it
+              </p>
 
               <div className="receipt-divider my-4" />
 
@@ -382,7 +484,14 @@ function NewBillInner() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-sm">Tip</span>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm">Tip</span>
+                    <span className="text-xs tabular-nums text-[color:var(--muted)]">
+                      {subtotalCents > 0
+                        ? `${((tipCents / subtotalCents) * 100).toFixed(1)}%`
+                        : ""}
+                    </span>
+                  </div>
                   <CentsInput
                     cents={tipCents}
                     onChange={setTipCents}
@@ -409,6 +518,20 @@ function NewBillInner() {
                   {centsToDisplay(totalCents)}
                 </span>
               </div>
+              {receiptTotalCents !== null &&
+                Math.abs(receiptTotalCents - (subtotalCents + taxCents + receiptTipCents)) > 1 && (
+                  <p className="mt-1 text-right text-xs text-[color:var(--muted)]">
+                    Receipt says {centsToDisplay(receiptTotalCents)}{receiptTipCents > 0 ? " incl. its printed tip" : " before tip"}
+                    {" · "}
+                    <button
+                      type="button"
+                      onClick={() => setPhotoOpen(true)}
+                      className="underline"
+                    >
+                      check the photo
+                    </button>
+                  </p>
+                )}
             </div>
 
             <div className="card space-y-3 p-4">
@@ -460,9 +583,37 @@ function NewBillInner() {
             >
               {stage === "saving" ? "Saving…" : "Create & get share link"}
             </button>
+            {saveBlocker && (
+              <p className="text-center text-xs text-[color:var(--muted)]">
+                {saveBlocker}
+              </p>
+            )}
           </div>
         )}
       </section>
+
+      {photoOpen && photoUrl && (
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setPhotoOpen(false)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={photoUrl}
+            alt="Your receipt"
+            className="max-h-full max-w-full rounded-lg object-contain"
+          />
+          <button
+            type="button"
+            onClick={() => setPhotoOpen(false)}
+            aria-label="Close"
+            className="btn absolute right-4 top-4 !px-3"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <Footer />
     </main>
   );

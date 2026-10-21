@@ -82,7 +82,7 @@ export function SwipeToDelete({
   }
 
   return (
-    <div className="relative overflow-hidden rounded-[18px]">
+    <div className="relative overflow-hidden rounded-[18px] border border-[color:var(--border)]">
       <button
         type="button"
         onClick={handleDeleteClick}
@@ -97,6 +97,9 @@ export function SwipeToDelete({
         ref={sliderRef}
         className="swipe-slider"
         style={{
+          // Solid background so the red action (and the page) never peek
+          // through the wrapper's rounded corners.
+          background: "var(--card)",
           transform: `translateX(${offset}px)`,
           transition: dragging ? "none" : "transform 200ms ease",
         }}

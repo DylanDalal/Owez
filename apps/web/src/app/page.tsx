@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { LandingReceiptMock } from "@/components/LandingReceiptMock";
@@ -14,6 +16,23 @@ import { useAuth } from "@/lib/auth";
 export default function LandingPage() {
   const { user, isAnonymous, signInWithGoogle, signInWithApple } = useAuth();
   const signedIn = !!user && !isAnonymous;
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sign in, then go straight to the thing they came for.
+  async function signInThenNew(fn: () => Promise<unknown>) {
+    setError(null);
+    setBusy(true);
+    try {
+      const u = await fn();
+      if (u) router.push("/new");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't sign you in.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <main>
@@ -46,21 +65,24 @@ export default function LandingPage() {
               <>
                 <button
                   type="button"
-                  onClick={() => void signInWithGoogle()}
+                  onClick={() => void signInThenNew(signInWithGoogle)}
+                  disabled={busy}
                   className="btn btn-primary text-base"
                 >
-                  Sign up with Google
+                  Continue with Google
                 </button>
                 <button
                   type="button"
-                  onClick={() => void signInWithApple()}
+                  onClick={() => void signInThenNew(signInWithApple)}
+                  disabled={busy}
                   className="btn text-base"
                 >
-                  Sign up with Apple
+                  Continue with Apple
                 </button>
               </>
             )}
           </div>
+          {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
         </div>
         <div className="relative">
           <LandingReceiptMock />

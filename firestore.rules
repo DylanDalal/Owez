@@ -11,15 +11,21 @@ rules_version = '2';
 //                                     doc id is auto-generated; `claimerId`
 //                                     field is pinned to request.auth.uid.
 //  - users/{uid}                    — user profile (payment handles, photo).
-//                                     publicly readable so claimants can see
-//                                     creator/member display names/photos.
+//                                     Only the owner reads it; bills carry a
+//                                     denormalized creatorName/creatorPhotoURL
+//                                     so claim pages never need it.
+//  - parseUsage/{uid}               — server-only rate-limit counters. No rule
+//                                     matches it, so clients are denied.
 //
 // Design notes:
-//  - Anyone can READ a tab or bill, since the whole point is that the creator
-//    shares links with friends. Security relies on UUID unguessability, not auth.
+//  - Anyone who knows a bill/tab id can GET it, since the whole point is that
+//    the creator shares links with friends. Security relies on id
+//    unguessability — which only holds if nobody can LIST the collection.
+//    So `get` is public but `list` is restricted to queries scoped to the
+//    caller's own documents (or to a known tabId).
 //  - Writing tabs/bills requires auth and request.auth.uid == creatorId, except
 //    that any authenticated viewer may append themselves to a tab's member list
-//    (members/updatedAt only) — that's how friends join a shared tab on claim.
+//    (members/updatedAt only, and only by growing the list).
 //  - Each claim doc stores its claimerId as a field; rules make sure it
 //    matches the authenticated uid on create/update.
 //  - Tab/Bill creators can delete any claim on their own tab/bill (for cleanup).
@@ -28,65 +34,92 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner(data) {
+      return signedIn() && request.auth.uid == data.creatorId;
+    }
+
     match /users/{uid} {
-      // Publicly readable so claimants can render a creator's display name
-      // and avatar on their bill view without a separate lookup.
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      // Profiles hold email + phone — owner only.
+      allow read, write: if signedIn() && request.auth.uid == uid;
     }
 
     match /tabs/{tabId} {
-      allow read: if true;
+      allow get: if true;
+      // Dashboard query: where creatorId == me.
+      allow list: if isOwner(resource.data);
 
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.creatorId
+      allow create: if isOwner(request.resource.data)
                     && request.resource.data.id == tabId;
 
-      // Creator can edit/delete freely. Any authenticated viewer may also
-      // update, but only to append themselves to the member list — they may
-      // touch `members` and `updatedAt` and nothing else. (Not constrained to
-      // adding *only* themselves; same UUID-unguessability trust model as claims.)
-      allow update: if request.auth != null
+      // Creator can edit freely. Any signed-in viewer may also update, but
+      // only to append to the member list — they may touch `members` and
+      // `updatedAt`, and the new list must still contain every existing member.
+      allow update: if signedIn()
                     && (
-                      request.auth.uid == resource.data.creatorId
-                      || request.resource.data.diff(resource.data)
-                           .affectedKeys().hasOnly(['members', 'updatedAt'])
+                      isOwner(resource.data)
+                      || (
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys().hasOnly(['members', 'updatedAt'])
+                        && request.resource.data.members.hasAll(resource.data.members)
+                        && request.resource.data.members.size() <= 200
+                      )
                     );
 
-      allow delete: if request.auth != null
-                    && request.auth.uid == resource.data.creatorId;
+      allow delete: if isOwner(resource.data);
     }
 
     match /bills/{billId} {
-      allow read: if true;
+      allow get: if true;
+      // Two list shapes exist: the dashboard (where creatorId == me) and the
+      // tab page (where tabId == <known tab>). Anything broader is denied, so
+      // nobody can dump every bill and its payment handles.
+      allow list: if signedIn()
+                  && (
+                    request.auth.uid == resource.data.creatorId
+                    || resource.data.tabId is string
+                  );
 
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.creatorId
+      allow create: if isOwner(request.resource.data)
                     && request.resource.data.id == billId;
 
-      allow update, delete: if request.auth != null
-                            && request.auth.uid == resource.data.creatorId;
+      allow update, delete: if isOwner(resource.data);
 
       match /claims/{claimId} {
+        // Scoped to one bill, so listing here is fine.
         allow read: if true;
 
         // Create: authenticated user, writing their own claimerId, with a
         // sanity-checked shape.
-        allow create: if request.auth != null
+        allow create: if signedIn()
                       && request.resource.data.claimerId == request.auth.uid
                       && request.resource.data.keys().hasOnly([
                            'itemId', 'unitIndex', 'portions', 'splitInto',
                            'claimerId', 'name', 'initials', 'createdAt',
                            'photoURL', 'duplicate'
-                         ]);
+                         ])
+                      && request.resource.data.portions is int
+                      && request.resource.data.portions >= 1
+                      && request.resource.data.splitInto is int
+                      && request.resource.data.splitInto >= 1
+                      && request.resource.data.splitInto <= 50
+                      && request.resource.data.name is string
+                      && request.resource.data.name.size() <= 80;
 
-        // Update: claimer can update their own claim, shape still enforced.
-        allow update: if request.auth != null
+        // Update: claimer can adjust their own portions/split only.
+        allow update: if signedIn()
                       && resource.data.claimerId == request.auth.uid
-                      && request.resource.data.claimerId == request.auth.uid;
+                      && request.resource.data.claimerId == request.auth.uid
+                      && request.resource.data.diff(resource.data)
+                           .affectedKeys().hasOnly(['portions', 'splitInto'])
+                      && request.resource.data.portions >= 1
+                      && request.resource.data.splitInto >= 1
+                      && request.resource.data.splitInto <= 50;
 
         // Delete: claimer themselves OR the bill creator (for cleanup).
-        allow delete: if request.auth != null
+        allow delete: if signedIn()
                       && (resource.data.claimerId == request.auth.uid
                           || get(/databases/$(database)/documents/bills/$(billId)).data.creatorId == request.auth.uid);
       }

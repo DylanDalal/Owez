@@ -91,6 +91,9 @@ importers:
       heic-convert:
         specifier: ^2.1.0
         version: 2.1.0
+      jose:
+        specifier: 6.1.0
+        version: 6.1.0
       next:
         specifier: 15.3.9
         version: 15.3.9(@babel/core@7.29.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -3675,6 +3678,9 @@ packages:
 
   join-component@1.1.0:
     resolution: {integrity: sha512-bF7vcQxbODoGK1imE2P9GS9aw4zD0Sd+Hni68IMZLj7zRnquH7dXUmMw9hDI5S/Jzt7q+IyTXN0rSg2GI0IKhQ==}
+
+  jose@6.1.0:
+    resolution: {integrity: sha512-TTQJyoEoKcC1lscpVDCSsVgYzUDg/0Bt3WE//WiTPK6uOCQC2KZS4MpugbMWt/zyjkopgZoXhZuCi00gLudfUA==}
 
   jpeg-js@0.4.4:
     resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
@@ -9961,6 +9967,8 @@ snapshots:
   jiti@2.6.1: {}
 
   join-component@1.1.0: {}
+
+  jose@6.1.0: {}
 
   jpeg-js@0.4.4: {}
 

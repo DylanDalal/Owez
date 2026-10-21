@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Header } from "./Header";
 import { Footer } from "./Footer";
 import { useAuth } from "@/lib/auth";
@@ -17,8 +17,33 @@ import { useAuth } from "@/lib/auth";
 export function SignInGate({ children }: { children: ReactNode }) {
   const { user, loading, isAnonymous, signInWithGoogle, signInWithApple } =
     useAuth();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  if (loading) return null;
+  async function run(fn: () => Promise<unknown>) {
+    setError(null);
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't sign you in.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <main>
+        <Header />
+        <section className="mx-auto flex max-w-md flex-col items-center px-6 pt-24 text-[color:var(--muted)]">
+          <span className="inline-block h-7 w-7 animate-spin rounded-full border-2 border-[color:var(--border)] border-t-[color:var(--color-accent)]" aria-hidden />
+          <p className="mt-3 text-sm">Loading…</p>
+        </section>
+        <Footer />
+      </main>
+    );
+  }
 
   if (!user || isAnonymous) {
     return (
@@ -34,21 +59,25 @@ export function SignInGate({ children }: { children: ReactNode }) {
           <div className="mt-8 space-y-3">
             <button
               type="button"
-              onClick={() => void signInWithGoogle()}
+              onClick={() => void run(signInWithGoogle)}
+              disabled={busy}
               className="btn btn-primary w-full"
             >
               <GoogleMark />
-              Sign up with Google
+              Continue with Google
             </button>
             <button
               type="button"
-              onClick={() => void signInWithApple()}
+              onClick={() => void run(signInWithApple)}
+              disabled={busy}
               className="btn w-full"
             >
               <AppleMark />
-              Sign up with Apple
+              Continue with Apple
             </button>
           </div>
+
+          {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
 
           <p className="mt-6 text-xs text-[color:var(--muted)]">
             By continuing you agree to the{" "}

@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import type { ParsedReceipt } from "@owez/shared";
+import {
+  AuthError,
+  bearerToken,
+  verifyIdToken,
+} from "@/lib/server/verifyIdToken";
+import { RateLimitError, enforceParseRateLimit } from "@/lib/server/rateLimit";
 
 /**
  * POST /api/parse-receipt
@@ -9,12 +15,23 @@ import type { ParsedReceipt } from "@owez/shared";
  * data URL and constrain the output with a JSON schema so the response is
  * directly mappable to ParsedReceipt.
  *
+ * This route spends real money per call, so it is locked down:
+ *   - Requires a Firebase ID token (Authorization: Bearer …) from a signed-in,
+ *     NON-anonymous user. Anonymous uids are free to mint, so they're rejected.
+ *   - Per-user burst + daily limits, plus a global circuit breaker
+ *     (see lib/server/rateLimit.ts).
+ *   - Upload must sniff as a real image and be under MAX_UPLOAD_BYTES.
+ *
  * Setup:
  *   1. Create an API key at https://platform.openai.com/api-keys
  *   2. Put the key in .env.local:
  *        OPENAI_API_KEY=sk-...
  *   3. (Optional) Override the model:
  *        OPENAI_MODEL=gpt-4o-mini   (cheaper, lower accuracy)
+ *   4. (Optional, recommended in prod) FIREBASE_SERVICE_ACCOUNT_JSON for
+ *      durable per-user daily quotas.
+ *   5. (Dev only) RECEIPT_PARSER_MOCK=true returns a canned receipt without
+ *      calling OpenAI, so the UI can be exercised with no key.
  */
 
 const OPENAI_URL = "https://api.openai.com/v1/responses";
@@ -22,38 +39,135 @@ const OPENAI_URL = "https://api.openai.com/v1/responses";
 // model. Override with OPENAI_MODEL if you want to trade accuracy for cost.
 const DEFAULT_MODEL = "gpt-4o";
 
+/** iPhone photos are 2–5 MB; anything bigger than this isn't a receipt. */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** Receipt-parsing calls routinely take 5–10 s; don't let a hung upstream
+ *  request pin a function forever. */
+const OPENAI_TIMEOUT_MS = 45_000;
+
+function jsonError(message: string, status: number, extra?: Record<string, string>) {
+  return NextResponse.json({ error: message }, { status, headers: extra });
+}
+
 export async function POST(req: Request) {
+  // --- 1. Who is asking? ---------------------------------------------------
+  let uid: string;
+  try {
+    const user = await verifyIdToken(bearerToken(req));
+    if (user.provider === "anonymous") {
+      throw new AuthError("Sign in with Google or Apple to scan receipts.", 403);
+    }
+    uid = user.uid;
+  } catch (e) {
+    if (e instanceof AuthError) return jsonError(e.message, e.status);
+    return jsonError("Could not verify your session.", 401);
+  }
+
+  // --- 3. Is the upload sane? ---------------------------------------------
+  const declaredLength = Number(req.headers.get("content-length") ?? 0);
+  if (declaredLength > MAX_UPLOAD_BYTES * 1.1) {
+    return jsonError("That photo is too large. Try one under 10 MB.", 413);
+  }
+
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return jsonError("Expected a multipart upload with a 'receipt' file.", 400);
+  }
+  const file = form.get("receipt");
+  if (!(file instanceof File)) {
+    return jsonError("Missing 'receipt' file", 400);
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return jsonError("That photo is too large. Try one under 10 MB.", 413);
+  }
+  if (file.size < 64) {
+    return jsonError("That file doesn't look like a photo.", 415);
+  }
+
+  // Sniff the magic bytes up front so junk uploads are bounced before any
+  // money is spent (and so the dev mock behaves like production).
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (!sniffImageMime(buf)) {
+    return jsonError(
+      "That file isn't a supported photo. Use a JPEG, PNG, WEBP, or HEIC.",
+      415,
+    );
+  }
+
+  // --- 3b. Are they allowed to spend right now? (after validation, so a
+  //     wrong-file fumble doesn't burn quota) ---------------------------
+  try {
+    await enforceParseRateLimit(uid);
+  } catch (e) {
+    if (e instanceof RateLimitError) {
+      return jsonError(e.message, 429, { "Retry-After": String(e.retryAfterSec) });
+    }
+    // Rate limiter infrastructure failure shouldn't take the product down.
+    console.error("[parse-receipt] rate limiter error:", e);
+  }
+
+  // --- 4. Parse ------------------------------------------------------------
+  if (process.env.RECEIPT_PARSER_MOCK === "true" && process.env.NODE_ENV !== "production") {
+    await new Promise((r) => setTimeout(r, 1200));
+    return NextResponse.json(mockReceipt());
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return NextResponse.json(
-      { error: "OPENAI_API_KEY not set. Copy .env.example to .env.local" },
-      { status: 500 },
-    );
+    console.error("[parse-receipt] OPENAI_API_KEY not set");
+    return jsonError("Receipt scanning isn't configured on this server.", 503);
   }
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
 
-  const form = await req.formData();
-  const file = form.get("receipt");
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Missing 'receipt' file" }, { status: 400 });
-  }
-
   try {
-    const dataUrl = await fileToDataUrl(file);
+    const dataUrl = await bufferToDataUrl(buf);
     const parsed = await callOpenAI(dataUrl, model, apiKey);
     return NextResponse.json(normalize(parsed));
   } catch (e) {
-    const message = e instanceof Error ? e.message : "OpenAI request failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    if (e instanceof UnsupportedImageError) return jsonError(e.message, 415);
+    // Never echo upstream error bodies to the client — they can include
+    // request ids and model/org details we don't want to leak.
+    console.error("[parse-receipt] upstream failure:", e);
+    return jsonError(
+      "We couldn't read that receipt. Try a clearer, well-lit photo.",
+      502,
+    );
   }
 }
 
-async function fileToDataUrl(file: File): Promise<string> {
-  const buf = Buffer.from(await file.arrayBuffer());
+class UnsupportedImageError extends Error {}
+
+/** Canned response for local development without an OpenAI key. */
+function mockReceipt(): ParsedReceipt {
+  return {
+    merchant: "The Corner Bistro",
+    items: [
+      { name: "Margherita Pizza", priceCents: 1600, quantity: 1 },
+      { name: "House Salad", priceCents: 900, quantity: 2 },
+      { name: "Lemonade", priceCents: 450, quantity: 1 },
+      { name: "Craft Beer", priceCents: 700, quantity: 3 },
+      { name: "Tiramisu", priceCents: 800, quantity: 1 },
+    ],
+    subtotalCents: 6750,
+    taxCents: 557,
+    tipCents: 0,
+    totalCents: 7307,
+  };
+}
+
+async function bufferToDataUrl(buf: Buffer): Promise<string> {
   // Trust the sniffed bytes over the browser-provided type: a mislabeled
   // image (e.g. a WEBP sent as image/jpeg) makes the vision model misread or
   // reject it. Falls back to the declared type, then JPEG.
-  const mime = sniffImageMime(buf) ?? file.type ?? "image/jpeg";
+  const mime = sniffImageMime(buf);
+  if (!mime) {
+    throw new UnsupportedImageError(
+      "That file isn't a supported photo. Use a JPEG, PNG, WEBP, or HEIC.",
+    );
+  }
 
   // OpenAI vision does not accept HEIC/HEIF (the default iPhone photo format).
   // Convert it to JPEG server-side so those uploads parse instead of failing.
@@ -167,6 +281,7 @@ async function callOpenAI(dataUrl: string, model: string, apiKey: string): Promi
 
   const res = await fetch(OPENAI_URL, {
     method: "POST",
+    signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,

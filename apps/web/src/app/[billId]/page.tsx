@@ -46,7 +46,7 @@ export default function PublicBillPage({
   const search = useSearchParams();
   const isOwnerView = search.get("owner") === "1";
 
-  const { user, profile, signInAnon } = useAuth();
+  const { user, profile, loading: authLoading, signInAnon } = useAuth();
 
   const [bill, setBill] = useState<Bill | null | undefined>(undefined); // undefined = loading
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -59,10 +59,13 @@ export default function PublicBillPage({
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const nameBarRef = useRef<HTMLDivElement | null>(null);
 
-  // Ensure we have a uid before writing any claims.
+  // Ensure we have a uid before writing any claims — but only after Firebase
+  // has finished restoring any persisted session. Signing in anonymously
+  // while `user` is still null-because-loading replaced the creator's Google
+  // session with an anonymous one whenever they reloaded their own bill.
   useEffect(() => {
-    if (!user) void signInAnon();
-  }, [user, signInAnon]);
+    if (!authLoading && !user) void signInAnon();
+  }, [authLoading, user, signInAnon]);
 
   // Real-time subscriptions.
   useEffect(() => {
@@ -216,7 +219,34 @@ export default function PublicBillPage({
     }
   }
 
-  if (bill === undefined) return null;
+  if (bill === undefined) {
+    return (
+      <main>
+        <Header />
+        <section
+          className="mx-auto w-full max-w-2xl px-4 pt-6"
+          aria-busy="true"
+          aria-label="Loading bill"
+        >
+          <div className="animate-pulse">
+            <div className="h-3 w-32 rounded bg-[color:var(--border)]" />
+            <div className="mt-3 h-8 w-2/3 rounded bg-[color:var(--border)]" />
+            <div className="mt-4 h-3 w-full max-w-md rounded bg-[color:var(--border)]" />
+            <div className="mt-6 grid gap-3">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="card p-4">
+                  <div className="h-4 w-1/2 rounded bg-[color:var(--border)]" />
+                  <div className="mt-2 h-3 w-16 rounded bg-[color:var(--border)]" />
+                  <div className="mt-3 h-8" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <Footer />
+      </main>
+    );
+  }
   if (bill === null) {
     return (
       <main>
@@ -236,6 +266,32 @@ export default function PublicBillPage({
     typeof window !== "undefined"
       ? `${window.location.origin}/${bill.id}`
       : "";
+  const creatorFirstName = bill.creatorName?.split(/\s+/)[0];
+  const shareTitle = creatorFirstName
+    ? `Pay ${creatorFirstName} back for ${bill.title || "a receipt"}`
+    : `Pay back for ${bill.title || "a receipt"}`;
+  const canNativeShare =
+    typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  async function copyShareUrl() {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      flashToast("Copied!", 1500);
+    } catch {
+      flashToast("Copy failed, select and copy manually");
+    }
+  }
+
+  async function nativeShare() {
+    try {
+      await navigator.share({ title: shareTitle, url: shareUrl });
+    } catch (e) {
+      // AbortError = user dismissed the share sheet; anything else, fall
+      // back to the clipboard so they still get the link.
+      if (e instanceof Error && e.name === "AbortError") return;
+      await copyShareUrl();
+    }
+  }
 
   const detailItem = detail
     ? bill.items.find((it) => it.id === detail.itemId)
@@ -267,17 +323,21 @@ export default function PublicBillPage({
                 value={shareUrl}
                 onFocus={(e) => e.currentTarget.select()}
               />
+              {canNativeShare && (
+                <button
+                  type="button"
+                  className="btn btn-primary whitespace-nowrap"
+                  onClick={() => void nativeShare()}
+                >
+                  Share
+                </button>
+              )}
               <button
                 type="button"
-                className="btn btn-primary whitespace-nowrap"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(shareUrl);
-                    flashToast("Copied!", 1500);
-                  } catch {
-                    flashToast("Copy failed, select and copy manually");
-                  }
-                }}
+                className={
+                  "whitespace-nowrap " + (canNativeShare ? "btn" : "btn btn-primary")
+                }
+                onClick={() => void copyShareUrl()}
               >
                 Copy
               </button>
@@ -455,6 +515,7 @@ export default function PublicBillPage({
               value={myName}
               onChange={(e) => saveMyName(e.target.value)}
               placeholder="Type your name to start claiming"
+              maxLength={80}
               className="mt-1"
             />
           </div>

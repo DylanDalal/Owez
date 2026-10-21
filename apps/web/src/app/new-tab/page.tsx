@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Bill, ParsedReceipt } from "@owez/shared";
+import type { Bill, ParsedReceipt, PaymentMethods } from "@owez/shared";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SignInGate } from "@/components/SignInGate";
 import { useAuth } from "@/lib/auth";
 import { createBill, createTab, makeId, newBillId } from "@/lib/bills";
 import { upsertProfile } from "@/lib/profiles";
+import { parseReceiptFile } from "@/lib/parse";
 import { centsToDisplay } from "@/lib/format";
 
 type Stage = "details" | "parsing" | "saving";
@@ -68,15 +69,7 @@ function NewTabInner() {
       const parsed: ParsedReceiptWithFile[] = [];
 
       for (const file of fileArray) {
-        const fd = new FormData();
-        fd.append("receipt", file);
-        const res = await fetch("/api/parse-receipt", {
-          method: "POST",
-          body: fd,
-        });
-        if (!res.ok) throw new Error(await res.text());
-
-        const parsedReceipt = (await res.json()) as ParsedReceipt;
+        const parsedReceipt = await parseReceiptFile(file);
         parsed.push({ file, parsed: parsedReceipt });
         setParsingProgress((n) => n + 1);
       }
@@ -92,6 +85,13 @@ function NewTabInner() {
 
   const hasPayment = !!(venmo.trim() || cashapp.trim() || zellePhone.trim());
   const canSave = !!tabTitle.trim() && receipts.length > 0 && hasPayment;
+  const saveBlocker = !canSave
+    ? !tabTitle.trim()
+      ? "Give the tab a name."
+      : receipts.length === 0
+        ? "Add at least one receipt photo."
+        : "Add at least one way to get paid — Venmo, Cash App or Zelle."
+    : null;
 
   async function save() {
     if (!user) return;
@@ -113,11 +113,13 @@ function NewTabInner() {
 
       const tabId = newBillId();
       const billIds: string[] = [];
-      const paymentMethods = {
-        venmo: venmo.trim() ? venmo.trim().replace(/^@/, "") : undefined,
-        cashapp: cashapp.trim() ? cashapp.trim().replace(/^\$/, "") : undefined,
-        zellePhone: zellePhone.trim() ? zellePhone.trim() : undefined,
-      };
+      // Firestore rejects `undefined` values, so only include handles that
+      // were actually filled in. (Blank fields used to make every tab save
+      // fail with "Unsupported field value: undefined".)
+      const paymentMethods: PaymentMethods = {};
+      if (venmo.trim()) paymentMethods.venmo = venmo.trim().replace(/^@/, "");
+      if (cashapp.trim()) paymentMethods.cashapp = cashapp.trim().replace(/^\$/, "");
+      if (zellePhone.trim()) paymentMethods.zellePhone = zellePhone.trim();
 
       // Create all bill documents
       for (const receipt of receipts) {
@@ -142,8 +144,8 @@ function NewTabInner() {
           totalCents: receipt.parsed.totalCents,
           paymentMethods,
           tabId, // Link to the tab
-          title: receipt.parsed.merchant,
         };
+        if (receipt.parsed.merchant) bill.title = receipt.parsed.merchant;
 
         if (!bill.creatorName) delete bill.creatorName;
         if (!bill.creatorPhotoURL) delete bill.creatorPhotoURL;
@@ -159,7 +161,7 @@ function NewTabInner() {
         creatorPhotoURL: user.photoURL ?? profile?.photoURL ?? undefined,
         createdAt: Date.now(),
         title: tabTitle.trim(),
-        description: tabDescription.trim() || undefined,
+        ...(tabDescription.trim() ? { description: tabDescription.trim() } : {}),
         members: [
           {
             userId: user.uid,
@@ -347,11 +349,17 @@ function NewTabInner() {
             >
               {stage === "saving" ? "Creating tab…" : "Create & get share link"}
             </button>
+            {saveBlocker && (
+              <p className="text-center text-xs text-[color:var(--muted)]">
+                {saveBlocker}
+              </p>
+            )}
           </div>
         )}
 
         {stage === "parsing" && (
           <div className="mt-6 card p-8 text-center">
+            <span className="mx-auto mb-4 block h-8 w-8 animate-spin rounded-full border-2 border-[color:var(--border)] border-t-[color:var(--color-accent)]" aria-hidden />
             <p className="font-display text-xl">Reading your receipts…</p>
             <p className="mt-2 text-sm text-[color:var(--muted)]">
               Processing {Math.min(parsingProgress + 1, parsingTotal)} of{" "}

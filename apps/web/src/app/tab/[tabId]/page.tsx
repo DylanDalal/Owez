@@ -3,7 +3,12 @@
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Bill, Claim, Tab } from "@owez/shared";
-import { buildPayLinks, initialsFromName, unitsForItem } from "@owez/shared";
+import {
+  buildPayLinks,
+  groupClaimsByUnit,
+  initialsFromName,
+  unitsForItem,
+} from "@owez/shared";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ReceiptItemCard } from "@/components/ReceiptItemCard";
@@ -32,7 +37,7 @@ export default function PublicTabPage({
   const router = useRouter();
   const isOwnerView = search.get("owner") === "1";
 
-  const { user, profile, signInAnon } = useAuth();
+  const { user, profile, loading: authLoading, signInAnon } = useAuth();
 
   const [tab, setTab] = useState<Tab | null | undefined>(undefined);
   const [bills, setBills] = useState<Bill[]>([]);
@@ -48,16 +53,24 @@ export default function PublicTabPage({
   const [splitEvenlyBill, setSplitEvenlyBill] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
+  // Open receipts by default so the page isn't a wall of collapsed rows on
+  // arrival: all of them when there are only a few, otherwise just the first.
+  const seededExpand = useRef(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const nameBarRef = useRef<HTMLDivElement | null>(null);
 
-  // Redirect anonymous users to sign in
+  // Give friends an anonymous uid so their claims pass the rules — but only
+  // once Firebase has finished restoring any persisted session. Calling
+  // signInAnonymously while `user` is still null-because-loading replaced
+  // the creator's Google session with an anonymous one on every reload.
   useEffect(() => {
-    if (!user) void signInAnon();
-  }, [user, signInAnon]);
+    if (!authLoading && !user) void signInAnon();
+  }, [authLoading, user, signInAnon]);
 
+  // Friends (anonymous viewers) never see the owner view, even if they got
+  // the ?owner=1 link forwarded to them.
   useEffect(() => {
-    if (user?.isAnonymous && !isOwnerView) {
+    if (user?.isAnonymous && isOwnerView) {
       router.replace(`/tab/${tabId}`);
     }
   }, [user, isOwnerView, tabId, router]);
@@ -71,6 +84,14 @@ export default function PublicTabPage({
       u2();
     };
   }, [tabId]);
+
+  useEffect(() => {
+    if (seededExpand.current || bills.length === 0) return;
+    seededExpand.current = true;
+    setExpandedBills(
+      new Set(bills.length <= 3 ? bills.map((b) => b.id) : [bills[0]!.id]),
+    );
+  }, [bills]);
 
   // Subscribe to claims for all bills
   useEffect(() => {
@@ -155,10 +176,13 @@ export default function PublicTabPage({
     if (!tab || !user || !myName.trim()) return;
     if (tab.members.some((m) => m.userId === user.uid)) return;
     try {
+      // Firestore rejects `undefined` inside arrayUnion payloads, so only
+      // attach photoURL when we actually have one.
+      const photoURL = user.photoURL ?? profile?.photoURL ?? undefined;
       await addMemberToTab(tab.id, {
         userId: user.uid,
         name: myName.trim(),
-        photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
+        ...(photoURL ? { photoURL } : {}),
         joinedAt: Date.now(),
       });
     } catch {
@@ -174,12 +198,21 @@ export default function PublicTabPage({
       return;
     }
 
+    // Match the unit's existing split so we take one portion of it rather
+    // than trying to overwrite it with splitInto=1.
+    const bill = bills.find((b) => b.id === billId);
+    const item = bill?.items.find((it) => it.id === itemId);
+    const unit = item
+      ? unitsForItem(item, claimsByBill.get(billId) ?? [])[unitIndex]
+      : undefined;
+    const splitInto = unit && unit.splitInto > 1 ? unit.splitInto : 1;
+
     try {
       await claimItemUnit(billId, {
         itemId,
         unitIndex,
         portions: 1,
-        splitInto: 1,
+        splitInto,
         claimerId: user.uid,
         name: myName.trim(),
         initials: initialsFromName(myName),
@@ -250,54 +283,87 @@ export default function PublicTabPage({
     }
   }
 
-  async function applySplitEvenly(
-    billId: string,
-    splitCount: number,
-    autoAssign: boolean,
-  ) {
-    if (!tab || !user || !myName.trim()) return;
-
+  /**
+   * "Split evenly": put the current viewer down for 1/N of every unit on
+   * the receipt they haven't already claimed. Only the viewer's own claims
+   * are written — rules reject claims on anyone else's behalf — so each
+   * friend taps this from their own phone and the splits line up.
+   */
+  async function applySplitEvenly(billId: string, splitCount: number) {
+    if (!tab || !user || !myName.trim()) {
+      focusName();
+      return;
+    }
     const bill = bills.find((b) => b.id === billId);
     if (!bill) return;
     const billClaims = claimsByBill.get(billId) ?? [];
+    const unitMap = groupClaimsByUnit(bill.items, billClaims);
 
+    let claimed = 0;
+    let skipped = 0;
     try {
-      if (autoAssign && tab.members.length > 0) {
-        // Auto-assign every unit to all tab members, split evenly.
-        for (const member of tab.members) {
-          for (const item of bill.items) {
-            for (let unitIdx = 0; unitIdx < item.quantity; unitIdx++) {
-              const existingClaim = billClaims.find(
-                (c) =>
-                  c.itemId === item.id &&
-                  c.unitIndex === unitIdx &&
-                  c.claimerId === member.userId,
-              );
+      for (const item of bill.items) {
+        for (let unitIdx = 0; unitIdx < item.quantity; unitIdx++) {
+          const unit = unitMap.get(`${item.id}:${unitIdx}`);
+          if (!unit) continue;
+          const splitClaims = unit.claims.filter((c) => !c.duplicate);
+          if (splitClaims.some((c) => c.claimerId === user.uid)) continue;
 
-              if (!existingClaim) {
-                await claimItemUnit(billId, {
-                  itemId: item.id,
-                  unitIndex: unitIdx,
-                  portions: 1,
-                  splitInto: tab.members.length,
-                  claimerId: member.userId,
-                  name: member.name,
-                  initials: initialsFromName(member.name),
-                  photoURL: member.photoURL,
-                });
-              }
-            }
+          // Keep an existing larger split; otherwise split N ways. Skip units
+          // that are already full.
+          const existingSplit = splitClaims.length > 0 ? unit.splitInto : 1;
+          const splitInto = Math.max(existingSplit, splitCount);
+          const taken = splitClaims.reduce((sum, c) => sum + c.portions, 0);
+          if (taken >= splitInto) {
+            skipped++;
+            continue;
           }
+
+          await claimItemUnit(billId, {
+            itemId: item.id,
+            unitIndex: unitIdx,
+            portions: 1,
+            splitInto,
+            claimerId: user.uid,
+            name: myName.trim(),
+            initials: initialsFromName(myName),
+            photoURL: user.photoURL ?? profile?.photoURL ?? undefined,
+          });
+          claimed++;
         }
       }
+      await ensureMember();
       setSplitEvenlyBill(null);
-      flashToast("Receipt split among members", 1500);
+      const summary =
+        claimed === 0
+          ? "Nothing left to split on this receipt"
+          : `Split ${claimed} item${claimed === 1 ? "" : "s"} ${splitCount} ways`;
+      flashToast(skipped > 0 ? `${summary} · ${skipped} already full` : summary, 2200);
     } catch (e) {
       flashToast(e instanceof Error ? e.message : "Could not split", 2600);
     }
   }
 
-  if (tab === undefined) return null;
+  if (tab === undefined) {
+    return (
+      <main>
+        <Header />
+        <section className="mx-auto w-full max-w-2xl px-4 pt-6">
+          <div className="h-8 w-2/3 animate-pulse rounded-lg bg-[color:var(--border)]" />
+          <div className="mt-3 h-4 w-1/3 animate-pulse rounded bg-[color:var(--border)]" />
+          <div className="mt-8 space-y-3">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-20 animate-pulse rounded-[18px] bg-[color:var(--border)]"
+              />
+            ))}
+          </div>
+        </section>
+        <Footer />
+      </main>
+    );
+  }
   if (tab === null) {
     return (
       <main>
@@ -317,6 +383,8 @@ export default function PublicTabPage({
     typeof window !== "undefined"
       ? `${window.location.origin}/tab/${tab.id}`
       : "";
+  const canNativeShare =
+    typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   const detailBill = detail ? bills.find((b) => b.id === detail.billId) : null;
   const detailItem =
@@ -343,15 +411,36 @@ export default function PublicTabPage({
                 value={shareUrl}
                 onFocus={(e) => e.currentTarget.select()}
               />
+              {canNativeShare && (
+                <button
+                  type="button"
+                  className="btn btn-primary whitespace-nowrap"
+                  onClick={async () => {
+                    try {
+                      await navigator.share({
+                        title: tab.title,
+                        text: `Claim what you had on "${tab.title}"`,
+                        url: shareUrl,
+                      });
+                    } catch {
+                      // user dismissed the share sheet — nothing to do
+                    }
+                  }}
+                >
+                  Share
+                </button>
+              )}
               <button
                 type="button"
-                className="btn btn-primary whitespace-nowrap"
+                className={
+                  "btn whitespace-nowrap" + (canNativeShare ? "" : " btn-primary")
+                }
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(shareUrl);
                     flashToast("Copied!", 1500);
                   } catch {
-                    flashToast("Copy failed");
+                    flashToast("Copy failed, select and copy manually");
                   }
                 }}
               >
@@ -434,22 +523,7 @@ export default function PublicTabPage({
                         onClick={myName.trim() ? undefined : () => focusName()}
                       >
                         {bill.items.map((item) => {
-                          const units = Array.from(
-                            { length: item.quantity },
-                            (_, u) => {
-                              const itemClaims = billClaims.filter(
-                                (c) =>
-                                  c.itemId === item.id && c.unitIndex === u,
-                              );
-                              return {
-                                itemId: item.id,
-                                unitIndex: u,
-                                splitInto: 1,
-                                portionsClaimed: itemClaims.length,
-                                claims: itemClaims,
-                              };
-                            },
-                          );
+                          const units = unitsForItem(item, billClaims);
 
                           return (
                             <ReceiptItemCard
@@ -545,15 +619,17 @@ export default function PublicTabPage({
         <SplitEvenlyModal
           open
           onClose={() => setSplitEvenlyBill(null)}
-          defaultSplitCount={tab.members.length}
-          onApply={(splitCount, autoAssign) =>
-            applySplitEvenly(splitEvenlyBill, splitCount, autoAssign)
-          }
+          defaultSplitCount={Math.max(2, tab.members.length)}
+          billTitle={bills.find((b) => b.id === splitEvenlyBill)?.title}
+          onApply={(splitCount) => applySplitEvenly(splitEvenlyBill, splitCount)}
         />
       )}
 
       {/* Sticky bottom bar: name input or settlement */}
-      {hasClaims && mySettlement && Object.keys(mySettlement).length > 0 ? (
+      {/* Creators usually haven't claimed anything themselves, but they are
+          exactly who needs to see "X owes you". Show the settlement whenever
+          there is one, not only once the viewer has claims. */}
+      {mySettlement && Object.keys(mySettlement).length > 0 ? (
         <div className="sticky-name-bar">
           <div className="mx-auto max-w-2xl">
             <div className="text-sm font-semibold mb-3">Settlement</div>
@@ -650,6 +726,7 @@ export default function PublicTabPage({
                 value={myName}
                 onChange={(e) => saveMyName(e.target.value)}
                 placeholder="Your name"
+              maxLength={80}
                 className="w-full"
               />
             </label>
@@ -664,6 +741,8 @@ export default function PublicTabPage({
           </div>
         </div>
       )}
+
+      <Footer />
     </main>
   );
 }

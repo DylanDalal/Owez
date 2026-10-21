@@ -13,6 +13,7 @@
     "@owez/shared": "workspace:*",
     "firebase": "^11.0.2",
     "heic-convert": "^2.1.0",
+    "jose": "6.1.0",
     "next": "15.3.9",
     "react": "19.0.0",
     "react-dom": "19.0.0"

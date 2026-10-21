@@ -135,8 +135,11 @@ export interface OwedBreakdown {
  * and assign consecutive portion-shares to each claim. This guarantees that
  * the sum of claim shares on a unit equals the unit's priceCents exactly.
  *
- * Tax and tip are then distributed proportionally to each claimer's total
- * items cents via largest-remainder rounding.
+ * Tax and tip are distributed in proportion to each claimer's items relative
+ * to the whole bill (so a friend who ordered 1/3 of the food pays 1/3 of the
+ * tax regardless of who else has claimed yet), using largest-remainder
+ * rounding so the collected amount is exact in cents. Once every item is
+ * claimed the shares sum to the full tax and tip.
  */
 export function owedByAllClaimers(
   bill: Bill,
@@ -188,10 +191,36 @@ export function owedByAllClaimers(
   const claimerIds = Array.from(itemsCentsByClaimer.keys()).sort();
   if (claimerIds.length === 0) return {};
   const weights = claimerIds.map((id) => itemsCentsByClaimer.get(id) ?? 0);
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  const claimedWeight = weights.reduce((a, b) => a + b, 0);
 
-  const taxShares = distributeCentsProportional(bill.taxCents, weights, totalWeight);
-  const tipShares = distributeCentsProportional(bill.tipCents, weights, totalWeight);
+  // Tax and tip are shared in proportion to the WHOLE bill's items, not just
+  // the items claimed so far. Otherwise the first friend to claim is handed
+  // 100% of the tax and tip until everyone else shows up — which is exactly
+  // when they're most likely to tap "Pay". Each claimer's share is
+  // items / billItems × tax. Only the portion of tax/tip belonging to
+  // claimed items is collected; unclaimed items keep their own share.
+  // Denominator is the sum of the items claims are drawn from (the stored
+  // subtotal can disagree with it after OCR edits, which would leave tax
+  // never fully collected). Fall back to the subtotal only if items are
+  // unpriced.
+  const itemsSum = sumItems(bill.items);
+  const billItemsCents = Math.max(
+    itemsSum > 0 ? itemsSum : bill.subtotalCents,
+    claimedWeight,
+  );
+  const collectible = (total: number) =>
+    billItemsCents > 0 ? Math.round((total * claimedWeight) / billItemsCents) : 0;
+
+  const taxShares = distributeCentsProportional(
+    collectible(bill.taxCents),
+    weights,
+    claimedWeight,
+  );
+  const tipShares = distributeCentsProportional(
+    collectible(bill.tipCents),
+    weights,
+    claimedWeight,
+  );
 
   const out: Record<ClaimerId, OwedBreakdown> = {};
   claimerIds.forEach((id, i) => {

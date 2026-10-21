@@ -16,15 +16,55 @@ import {
   signInWithPopup,
   signInWithRedirect,
   signOut as fbSignOut,
+  type GoogleAuthProvider,
+  type OAuthProvider,
   type User,
 } from "firebase/auth";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import type { UserProfile } from "@owez/shared";
 import { appleProvider, getFirebase, googleProvider } from "./firebase";
 
-function isMobile(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+/**
+ * Sign in with a popup, falling back to a full-page redirect only when the
+ * environment can't do popups at all.
+ *
+ * We deliberately do NOT use signInWithRedirect by default on mobile: with a
+ * firebaseapp.com authDomain, redirect sign-in silently fails on iOS Safari
+ * and other browsers that partition third-party storage, which left phone
+ * users tapping "Sign in" and getting nothing. Popups work in those browsers.
+ *
+ * Returns the signed-in user, or null when the user dismissed the popup (not
+ * an error) or when we handed off to a redirect (the page is about to unload).
+ * Throws a user-readable Error for real failures.
+ */
+async function signInWith(provider: GoogleAuthProvider | OAuthProvider): Promise<User | null> {
+  const { auth } = getFirebase();
+  try {
+    const cred = await signInWithPopup(auth, provider);
+    return cred.user;
+  } catch (e) {
+    const code = (e as { code?: string })?.code ?? "";
+    if (
+      code === "auth/popup-closed-by-user" ||
+      code === "auth/cancelled-popup-request"
+    ) {
+      return null;
+    }
+    if (
+      code === "auth/popup-blocked" ||
+      code === "auth/operation-not-supported-in-this-environment"
+    ) {
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
+    if (code === "auth/network-request-failed") {
+      throw new Error("Couldn't reach the sign-in service. Check your connection and try again.");
+    }
+    if (code === "auth/unauthorized-domain") {
+      throw new Error("Sign-in isn't enabled for this site address yet.");
+    }
+    throw new Error("Couldn't sign you in. Please try again.");
+  }
 }
 
 /**
@@ -43,8 +83,10 @@ interface AuthState {
   profile: UserProfile | null;
   loading: boolean;
   isAnonymous: boolean;
-  signInWithGoogle: () => Promise<void>;
-  signInWithApple: () => Promise<void>;
+  /** Resolves to the user, or null if the popup was dismissed / redirect
+   *  handoff happened. Throws a user-readable Error on real failures. */
+  signInWithGoogle: () => Promise<User | null>;
+  signInWithApple: () => Promise<User | null>;
   signInAnon: () => Promise<User>;
   signOut: () => Promise<void>;
 }
@@ -123,25 +165,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [user]);
 
-  const signInWithGoogle = useCallback(async () => {
-    const { auth } = getFirebase();
-    const provider = googleProvider();
-    if (isMobile()) {
-      await signInWithRedirect(auth, provider);
-    } else {
-      await signInWithPopup(auth, provider);
-    }
-  }, []);
-
-  const signInWithApple = useCallback(async () => {
-    const { auth } = getFirebase();
-    const provider = appleProvider();
-    if (isMobile()) {
-      await signInWithRedirect(auth, provider);
-    } else {
-      await signInWithPopup(auth, provider);
-    }
-  }, []);
+  const signInWithGoogle = useCallback(() => signInWith(googleProvider()), []);
+  const signInWithApple = useCallback(() => signInWith(appleProvider()), []);
 
   const signInAnon = useCallback(async () => {
     const { auth } = getFirebase();
